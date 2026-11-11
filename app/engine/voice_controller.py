@@ -878,7 +878,7 @@ class VoiceController(QObject):
         }
 
     def _typed_remember_clarification(self, text, answer):
-        if not self._clarification_flag.is_set():
+        if not self._clarification_flag.is_set() or self._has_pending_window_selection():
             return
         question = str(answer or "").strip()
         if not question:
@@ -1126,7 +1126,12 @@ class VoiceController(QObject):
         self.activity_event.emit({
             "kind": "confirmation",
             "title": f"Approval requested: {name}",
-            "details": description,
+            # Native window/target labels belong in the ephemeral approval UI,
+            # not in persistent activity history. Do not weaken the prompt.
+            "details": (
+                "Review the private native-window request in the confirmation dialog."
+                if name in {"kwin_click", "kwin_observe"} else description
+            ),
             "status": "pending",
         })
         self.state_changed.emit("confirmation")
@@ -2343,6 +2348,7 @@ class VoiceController(QObject):
             audit_log=self.audit_log,
             task_journal=self.task_journal,
             content_selection_callback=self._set_pending_content_selection,
+            before_visual_callback=self.unload_reasoning_model,
         )
 
     def _task_retry_execute(self, event_id, tool, arguments):
@@ -2614,6 +2620,7 @@ class VoiceController(QObject):
                 audit_log=self.audit_log,
                 task_journal=self.task_journal,
                 content_selection_callback=self._set_pending_content_selection,
+                before_visual_callback=self.unload_reasoning_model,
             )
         except Exception as error:
             agent = None

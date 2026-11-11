@@ -13,6 +13,7 @@ desktop tools run inside it, while keeping two things absolute:
 Anything outside the grant behaves exactly as before: no approval, no action.
 """
 
+import re
 import threading
 import time
 
@@ -85,9 +86,117 @@ class TaskGrant:
         return f"TaskGrant(task={self.task!r}, actions={self.actions})"
 
 
-#: The question put to the model instead of a keyword list. The model already
-#: reads every request, so it — not a hardcoded vocabulary — decides whether
-#: the user is asking for work performed on the desktop.
+# The guard is intentionally a small recognizer, not a natural-language task
+# executor. False means "ask the classifier", not "this is visual". Quoted
+# contents and path/basename literals are masked only for boundary/action checks
+# so a file called screenshot.png or "click then type.txt" is not GUI evidence.
+_LITERAL = re.compile(r'''"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?<!\w)(?:~?/|\./|\.\./)\S+|\b[\w.-]+\.[A-Za-z0-9]{1,10}\b''')
+_SECOND_ACTION = re.compile(
+    r"\b(?:then|afterwards)\b|;|\b(?:and|or)\s+(?:please\s+)?"
+    r"(?:click|tap|type|press|scroll|drag|navigate|select|choose|fill|move|send|"
+    r"focus|minimize|maximize|restore|close|activate|raise|resize|list|show|"
+    r"open|search|find|read|write|save|create|copy|delete|rename|remind|remember|play|pause|stop)\b",
+    re.I,
+)
+_GUI_ACTION = re.compile(
+    r"\b(?:click(?:ing)?|double[- ]click|right[- ]click|tap|type|typing|press|scroll(?:ing)?|"
+    r"drag(?:ging)?|navigate|select|choose|fill)\b|\b(?:log|sign)\s+in\b|"
+    r"\bopen\s+(?:the\s+)?(?:channel|tab|menu|dialog|button|link|page)\b",
+    re.I,
+)
+_VISUAL_OBSERVATION = re.compile(
+    r"\b(?:take|capture)\s+(?:a\s+)?(?:screen\s*shot|screenshot|screen\s+capture)\b|"
+    r"\b(?:describe|inspect|analy[sz]e|look\s+at|read)\s+(?:the\s+|my\s+|this\s+)?"
+    r"(?:screen|desktop|window|screenshot|display)(?![\w.])|"
+    r"\bwhat(?:'s|\s+is|\s+can\s+you\s+see)\s+(?:currently\s+)?(?:shown\s+|visible\s+)?"
+    r"(?:on|in)\s+(?:the\s+|my\s+|this\s+)?(?:screen|window|display|desktop)\b",
+    re.I,
+)
+_WINDOW_CONTENT = re.compile(
+    r"\b(?:button|channel|tab|menu|dialog|slider|icon|cursor|pointer|picture|image|"
+    r"file|folder|document|selection|selected|password|account|message|text|field|input|textbox|"
+    r"checkbox|dropdown|pane|panel|popup|item|row|column|cell|option|link|page|form|control|"
+    r"notification|widget|sidebar|element|taskbar|and|or)\b", re.I)
+
+
+def prefer_structured_tools(request):
+    """Recognize clear single tool-domain requests before any LLM routing.
+
+    Window geometry/identity, files, clipboard, memory and other structured
+    state do not need vision merely because their names mention screens.
+    This returns no tool arguments and grants no permission. Ambiguous,
+    compound, and GUI-content work stays with the existing classifier.
+    """
+    if not isinstance(request, str) or not request.strip() or len(request) > 8000:
+        return False
+    text = " ".join(request.strip().split()).rstrip(".!?")
+    text = re.sub(r"^(?:please\s+|(?:can|could|would)\s+you\s+(?:please\s+)?|misty[, :]\s*)", "", text, flags=re.I)
+    masked = _LITERAL.sub("LITERAL", text)
+    if (_SECOND_ACTION.search(masked) or _VISUAL_OBSERVATION.search(masked)
+            or re.search(r"\b(?:on|from|inside)\s+(?:the\s+|my\s+|this\s+|that\s+)?(?:screen|window|display|desktop)\b", masked, re.I)):
+        return False
+
+    def matches(pattern, value=masked):
+        return re.fullmatch(pattern, value, re.I) is not None
+
+    # Explicit stores/schedules carry content, not commands to operate that
+    # content. Boundary checks above still reject "... then click ...".
+    if matches(r"(?:remember|recall|forget)\s+.+|(?:list|show|search|clear|delete)\s+(?:my\s+|the\s+|all\s+)?(?:saved\s+)?memor(?:y|ies)(?:\s+.*)?"):
+        return True
+    if matches(r"remind\s+me\s+to\s+.+|(?:set|create|add|list|show|cancel|delete|remove)\s+(?:(?:a|my|the|all)\s+)?reminders?(?:\s+.*)?"):
+        return True
+    if matches(r"(?:list|show|add|create|schedule|delete|remove|cancel)\s+(?:(?:a|my|the|all|today's|tomorrow's)\s+)?calendar\s+events?(?:\s+.*)?|(?:list|show)\s+(?:my\s+)?(?:calendar|appointments)(?:\s+(?:today|tomorrow|this\s+week))?"):
+        return True
+    if matches(r"(?:read|show|clear|empty)\s+(?:the\s+|my\s+)?clipboard|what(?:'s|\s+is)\s+(?:in|on)\s+(?:the\s+|my\s+)?clipboard|(?:copy|write|set)\s+.+\s+to\s+(?:the\s+|my\s+)?clipboard|(?:set|replace|write)\s+(?:the\s+|my\s+)?clipboard\s+(?:to|with)\s+.+"):
+        return True
+
+    if matches(r"what\s+do\s+you\s+remember(?:\s+about\s+.+)?|what\s+reminders\s+(?:do\s+i\s+have|are\s+(?:set|pending))|what(?:'s|\s+is)\s+on\s+(?:my|the)\s+calendar(?:\s+(?:today|tomorrow|this\s+week))?|(?:add|create|schedule)\s+(?:a\s+|an\s+)?event\s+.+\s+(?:to|on)\s+(?:my|the)\s+calendar(?:\s+.*)?"):
+        return True
+    if _GUI_ACTION.search(masked):
+        return False
+    # Queries about content in an app are not filesystem/metadata operations.
+    if re.search(r"\b(?:in\s+(?:my\s+|the\s+)?(?:browser|discord|slack|telegram|firefox|chrome)|on\s+(?:amazon|ebay|allegro))\b", masked, re.I):
+        return False
+
+    move = re.fullmatch(
+        r"(?:move|send)\s+(?:the\s+|my\s+)?(?P<target>.+?)\s+(?:to|onto)\s+(?:the\s+|my\s+)?"
+        r"(?:(?:[\w-]+\s+){0,3}(?:screen|monitor|display)(?:\s+(?:[\w-]+)){0,2}|(?:DP|HDMI|eDP)-\d+(?:-\d+)?)", text, re.I)
+    if (move and not re.search(r"\b(?:and|or)\b", masked, re.I)
+            and not _WINDOW_CONTENT.search(move["target"])
+            and not re.fullmatch(r"this|that|it|something|thing", move["target"], re.I)
+            and not re.search(r"[/\\]|\.[A-Za-z0-9]{1,10}\b", move["target"])):
+        return True
+    control = re.fullmatch(r"(?:focus|minimize|maximize|restore|close|activate|raise)\s+(?:the\s+|my\s+)?(?P<target>.+)", text, re.I)
+    if (control and not _WINDOW_CONTENT.search(control["target"])
+            and not re.fullmatch(r"this|that|it|something|thing", control["target"], re.I)
+            and not re.search(r"[/\\]|\.[A-Za-z0-9]{1,10}\b|^on\s", control["target"], re.I)):
+        return True
+    if matches(r"(?:list|show|enumerate)\s+(?:(?:all|the|my|open|running|available|connected)\s+)*(?:windows|screens|monitors|displays)(?:\s+and\s+(?:windows|screens|monitors|displays))?"):
+        return True
+    if matches(r"(?:what|which)\s+(?:windows|screens|monitors|displays)\s+are\s+(?:open|running|available|connected)|(?:which|what)\s+window\s+is\s+(?:currently\s+)?(?:active|focused)|(?:what|which)(?:'s|\s+is)\s+(?:the\s+)?(?:current|active|focused)\s+(?:window|application|app)|(?:get|show)\s+(?:the\s+)?(?:current|active|focused)\s+window(?:\s+(?:title|id|info))?"):
+        return True
+
+    if matches(r"(?:what(?:'s|\s+is)\s+(?:the\s+)?(?:current\s+)?(?:time|date)|what\s+time\s+is\s+it|(?:tell\s+me|show|get)\s+(?:the\s+)?(?:time|date)|(?:show|get|check)\s+(?:the\s+)?system\s+status|how\s+much\s+(?:disk\s+space|memory|ram)\s+is\s+(?:left|free|available))"):
+        return True
+    if matches(r"(?:play|pause|resume|stop)\s+(?:the\s+|my\s+|some\s+)?(?:music|media|playback)|(?:next|previous|skip)\s+(?:track|song)|(?:what(?:'s|\s+is)\s+(?:currently\s+)?playing)|(?:list|show)\s+(?:the\s+)?media\s+players"):
+        return True
+    if matches(r"(?:system\s+status|(?:show|get|check)\s+(?:the\s+)?(?:cpu|ram|memory|disk|battery)\s+(?:usage|status|temperature|level)|what(?:'s|\s+is)\s+(?:the\s+)?(?:cpu|ram|memory|disk|battery)\s+(?:usage|status|temperature|level))"):
+        return True
+    # Paths/basenames count only under explicit filesystem verbs; the same
+    # literals under "click/open channel/inspect screen" never get here.
+    file_noun = re.search(r"\b(?:files?|folders?|director(?:y|ies)|documents?)\b", masked, re.I)
+    file_literal = re.search(r"(?<!\w)(?:~?/|\./|\.\./)\S+|\b[\w.-]+\.[A-Za-z0-9]{1,10}\b", text) is not None
+    if (file_noun or file_literal) and matches(
+        r"(?:find|search|list|read|write|create|make|copy|move|rename|delete|trash|open|reveal|grep|transcribe|index|save|show|get)\s+.+"):
+        # "find files by using the on-screen search" describes GUI work,
+        # unlike file names containing the same words.
+        if not re.search(r"\b(?:on[- ]screen|using\s+(?:the\s+)?(?:gui|app|menu)|by\s+(?:using|opening)|(?:to|onto|in)\s+(?:the\s+)?(?:right\s+|left\s+|main\s+)?(?:screen|monitor|display))\b", masked, re.I):
+            return True
+    return False
+
+
+#: Structured domains are handled deterministically first; remaining requests
+#: use the model to distinguish genuine GUI content work from ordinary tools.
 ROUTE_QUESTION = """
 Does this request ask you to OPERATE a desktop application or a website on
 the user's behalf (open something, look at it, click, type, search, fill in,
@@ -104,11 +213,18 @@ a graphical application or a web page the user asked to open. Choose
 
 Examples of "desktop": "click the X on my screen", "in Discord open channel
 Y", "find a product on <site> and show it", "go to my bank site and log in".
-A request that names a screen, a window or a website to OPERATE is desktop,
-even if it sounds like one step — acting on it needs the screen.
+A screen/window mention alone does NOT require vision. Distinguish changing
+window geometry/identity with existing tools from operating its visible contents.
 
-Examples of "direct": "what time is it", "find my files", "play music",
-"open youtube", "remember this", "how much disk space is left".
+Examples of "direct": "move Discord to the main screen", "minimize Firefox",
+"focus Discord", "list windows", "which window is active", "list screens",
+"what time is it", "find my files", "play music", "read my clipboard",
+"set a reminder", "open youtube", "remember this", "how much disk space is left".
+Window management has exact tools (move_window_to_screen, focus_window,
+minimize_window, maximize_window, restore_window, close_window, list_windows,
+list_screens); do not substitute screenshot inspection for these operations.
+Compound content interaction such as "move Discord then click its channel"
+still requires the desktop route.
 
 When in doubt between the two, choose "desktop": the loop looks before it
 acts and asks when it is unsure, while the planner cannot see the screen.
@@ -138,14 +254,31 @@ def mentions_screen(text):
     return any(word in lowered for word in _SCREEN_REFERENCES)
 
 
+def prefer_structured_sequence(request):
+    """A sequence of known tool operations is still not visual interaction.
+
+    Literal filenames/quoted payloads are masked only for route boundaries;
+    the original request is preserved for planning and argument binding.
+    """
+    if not isinstance(request, str) or len(request) > 8000:
+        return False
+    masked = _LITERAL.sub("LITERAL", request)
+    clauses = re.split(r"\s+(?:and\s+then|and|then)\s+|\s*;\s*", masked, flags=re.I)
+    if len(clauses) < 2 or len(clauses) > 10 or not prefer_structured_tools(clauses[0]):
+        return False
+    first_is_window = re.match(r"\s*(?:(?:please|can you|could you)\s+)*(?:move|send|focus|minimize|maximize|restore|close|activate|raise)\b", clauses[0], re.I)
+    return all(prefer_structured_tools(clause) or (
+        first_is_window and re.fullmatch(r"\s*(?:focus|minimize|maximize|restore|close|activate|raise)\s+(?:it|this\s+window|that\s+window)[.!?]?\s*", clause, re.I)
+    ) for clause in clauses[1:])
+
+
 def looks_like_desktop_work(agent, request, attempts=2):
     """Decide whether ``request`` needs the desktop loop.
 
-    The model is asked first (no keyword list decides the route). If it
-    answers "direct" but the wording unambiguously refers to something on
-    screen — "click on X", "on the right screen", "in window Y" — the answer
-    is overridden, because the one-shot planner cannot look at a screen and
-    will otherwise plan an inspection that goes nowhere.
+    Clear single structured-tool domains bypass model classification first.
+    The model classifies remaining ambiguous/GUI work. If it answers "direct"
+    but that remaining wording refers to on-screen content, the screen fallback
+    can override it; window geometry/metadata requests never reach that fallback.
 
     If classification fails after the bounded retries, explicit screen
     references use the same fallback. Routing is not authorization: the
@@ -154,6 +287,8 @@ def looks_like_desktop_work(agent, request, attempts=2):
     Returns True only when the desktop path should be tried.
     """
     if not isinstance(request, str) or not request.strip():
+        return False
+    if prefer_structured_tools(request) or prefer_structured_sequence(request):
         return False
     for _attempt in range(max(1, int(attempts))):
         route = route_from_model(agent, request)

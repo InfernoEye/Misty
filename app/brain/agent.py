@@ -17,6 +17,10 @@ from app.brain.direct_actions import (
     resolve_conversational_reply,
     resolve_direct_action,
 )
+from app.brain.window_commands import (
+    window_control_plan, window_control_summary,
+    window_move_plan, window_move_summary,
+)
 from app.brain.planner import (
     PlanValidationError,
     ResultReferenceError,
@@ -101,7 +105,8 @@ IMPLICIT_WINDOW_RE = re.compile(
 # Documents") and must never be read as an application name.
 FILE_CLAUSE_START_RE = re.compile(
     r"^(?:report|notes?|file|folder|document|documents?|"
-    r"downloads?|desktop|pictures|music|videos?)\b",
+    r"downloads?|desktop|pictures|music|videos?)"
+    r"(?:\s|[/\\]|\.(?:[a-z0-9]{1,10})\b|$)",
     re.IGNORECASE,
 )
 
@@ -561,6 +566,18 @@ Choosing a tool when the request is imprecise:
   plan that guesses an exact value.
 - If an 'exact' tool would need a value you do not have, and no discovery
   tool can find it, do not call it: ask the user.
+Research and summarising:
+- web_research is ONE step that already searches the web and reads the best
+  pages. It returns 'results', each with a title, final URL, page 'text' and
+  search snippet. When those results are present, that IS the information the
+  user asked for: the request is complete and the answer stream summarises
+  it and cites the URLs.
+- Do not treat a partial fetch error, or a failed retry of web_research or
+  web_search, as a reason to look elsewhere. Local document search
+  (knowledge_search) only answers questions about the user's own files; it
+  is not a substitute for current public information and cannot find it.
+- Only one search+read step is needed for one question. Use web_search when
+  the user only wants links; use web_research when they want a summary.
 """
 
 
@@ -778,6 +795,15 @@ The report has an 'outcome' field. Use it exactly:
   uncertain. Never say all actions succeeded when any entry failed.
 Never describe a failed or uncertain action as done, and never claim that a
 failed action was retried or undone.
+
+When a successful web_research entry is in the report, answer the user's
+actual question from its page text, and cite each source URL you used. If
+the request was a summary or the newest information on a topic, include
+that substance; do not merely list tool names. Mention a partial fetch
+failure only briefly, then give the best supported answer. When successful
+web_research results are present, local document search finding nothing is
+not a failure of the user's request, and the user does not need to hear
+about the original failed attempt beyond one short sentence.
 """
 
 
@@ -791,6 +817,7 @@ class MistyAgent:
         audit_log=None,
         task_journal=None,
         content_selection_callback=None,
+        before_visual_callback=None,
     ):
         if (
             isinstance(min_intent_confidence, bool)
@@ -807,6 +834,12 @@ class MistyAgent:
         self.audit_log = audit_log
         self.task_journal = task_journal
         self.content_selection_callback = content_selection_callback
+        # The request owner synchronously releases reasoning/held leases before
+        # native visual inference or approval; standalone pilots may use stop().
+        # Standalone runs (without the voice controller) still release Qwen
+        # before the native visual pilot loads its own model.
+        self.before_visual_callback = (
+            before_visual_callback if callable(before_visual_callback) else self.stop)
         self.process = None
         self.log_file = None
         # Shutdown may set this to cooperate with an in-flight run. It is
@@ -856,10 +889,10 @@ class MistyAgent:
     def _extract_named_window_target(clause, continued=False):
         """Return ``(target, fuzzy_ok)`` for one clause, or ``None``.
 
-        ``fuzzy_ok`` is False when the clause names the app with a single
-        Title-case word. Such a word may be the model's own spelling rather
-        than the user's, so it is accepted only as an exact identity or
-        title match; a plain mishearing must not fuzzy-match some other app.
+        This phrase comes from the user's transcript, not from a model's
+        invented identifier. Capitalization must not change resolution:
+        speech recognition routinely capitalizes application names. Actual
+        opaque IDs are validated separately and never fuzzy-rebound.
         """
         text = str(clause or "").strip()
         if not text:
@@ -939,16 +972,15 @@ class MistyAgent:
             return None
         if phrase.casefold().startswith(("this ", "that ", "current ", "active ")):
             return None
-        # A single Title-case word ("Firefox", "Equicord") may be the model's
-        # own spelling rather than the user's, so it only matches exactly.
-        # Everything else may fuzzy-match: lowercase names, brand casing
-        # ("EquiCord"), and multi-word phrases.
-        plain_title_case = " " not in phrase and phrase.istitle()
-        return phrase, not plain_title_case
+        return phrase, True
 
     @staticmethod
     def _explicit_window_target(step):
-        """Return ``(argument_name, value)`` for a real explicit id, or None."""
+        """Return ``(argument_name, value)`` for a non-deictic target, or None.
+
+        The field is named ``window_id`` but may still hold user language; a
+        caller must bind it to a live ID before executing.
+        """
         arguments = step.get("arguments")
         if not isinstance(arguments, dict):
             return None
@@ -960,6 +992,14 @@ class MistyAgent:
             if value and value.casefold() not in WINDOW_ID_ALIASES:
                 return key, value
         return None
+
+    def _is_bound_window_id(self, value):
+        """True only when ``value`` is the exact ID of one live window."""
+        if not isinstance(value, str) or not value.strip() or "$steps." in value:
+            return False
+        resolution = self.registry.resolve_window_target(value, allow_fuzzy=False)
+        return (isinstance(resolution, dict) and resolution.get("success") is True
+                and resolution.get("window_id") == value)
 
     @staticmethod
     def _app_tokens(value):
@@ -997,13 +1037,28 @@ class MistyAgent:
     def _window_error(self, message):
         self._emit_activity({
             "kind": "decision",
-            "title": "Window target needed",
+            "title": "Clarification needed" if "?" in message else "Window target needed",
             "details": message,
             "status": "planned",
         })
         return message
 
-    def _resolve_named_target(self, target, allow_fuzzy):
+    @staticmethod
+    def _has_pending_clarification(context):
+        """True when this turn answers an earlier question.
+
+        Such an answer is planned with the original request as context, so a
+        text shortcut must not reinterpret a bare fragment on its own.
+        """
+        if not isinstance(context, Mapping):
+            return False
+        pending = context.get("pending")
+        source = pending if isinstance(pending, Mapping) else context
+        original, question = source.get("transcript"), source.get("question")
+        return (isinstance(original, str) and bool(original.strip())
+                and isinstance(question, str) and bool(question.strip()))
+
+    def _resolve_named_target(self, target, allow_fuzzy, step=None):
         """Resolve one named target; return ``(window_id, error_message)``."""
         # A result reference is filled later from a real result. Resolving
         # the template text as a window name produced the nonsense question
@@ -1014,15 +1069,14 @@ class MistyAgent:
         resolution = self.registry.resolve_window_target(
             target, allow_fuzzy=allow_fuzzy
         )
-        not_found = self._window_error(
-            f"I couldn't find a window matching '{target}'. "
-            "Which window did you mean?"
-        )
         if not isinstance(resolution, dict):
-            return None, not_found
+            return None, self._window_error("I couldn't read the open-window catalog reliably. No window action was executed.")
         if resolution.get("success") is True and resolution.get("window_id"):
             return str(resolution["window_id"]), None
         if resolution.get("ambiguous"):
+            if isinstance(step, dict) and callable(getattr(self.registry, "window_selection_callback", None)):
+                extra = {"screen_name": step["arguments"].get("screen_name")} if step.get("tool") == "move_window_to_screen" else {}
+                self.registry.request_window_selection(step["tool"], resolution.get("candidates") or [], extra)
             choices = "; ".join(
                 f"{index}. {candidate.get('title', 'Untitled')}"
                 for index, candidate in enumerate(
@@ -1033,7 +1087,56 @@ class MistyAgent:
                 f"Several windows match '{target}'. "
                 f"Which one did you mean? {choices}"
             )
-        return None, not_found
+        message = resolution.get("message")
+        if isinstance(message, str) and message and not message.startswith("No open window"):
+            return None, self._window_error(
+                "I couldn't inspect the open-window catalog: " + message[:400]
+            )
+        # Only a genuine no-match may ask the local model to reason over live
+        # catalog identities/titles. A service error is not evidence that the
+        # requested application is absent, and ambiguity is never guessed.
+        semantic = self._reason_named_window(target)
+        if isinstance(semantic, dict):
+            if semantic.get("success") is True:
+                return semantic["window_id"], None
+            question = semantic.get("question")
+            if isinstance(question, str) and question.strip():
+                return None, self._window_error(question.strip()[:500])
+        return None, self._window_error(
+            f"I couldn't find a window matching '{target}'. Which window did you mean?"
+        )
+
+    def _reason_named_window(self, target):
+        """One tool-disabled inference, bound to actual catalog IDs and rechecked."""
+        executor = getattr(self.registry, "executor", None)
+        listing_method = getattr(executor, "list_windows", None)
+        if not callable(listing_method):
+            return None
+        try:
+            listing = listing_method()
+            from app.brain.window_reasoning import reason_window_target
+            selected = reason_window_target(self, target, listing)
+        except Exception:
+            return None
+        if selected.get("success") is not True:
+            return selected
+        # A model can select only an observed ID, never synthesize an action or
+        # smuggle a new app name into the execution target. Recheck after model
+        # latency before any step in the plan is allowed to execute.
+        window_id = selected["window_id"]
+        current = self.registry.resolve_window_target(window_id, allow_fuzzy=False)
+        if (not isinstance(current, dict) or current.get("success") is not True
+                or current.get("window_id") != window_id):
+            return {"success": False, "question": "The selected window is no longer available. Please try again."}
+        before, after = selected.get("window"), current.get("window")
+        if isinstance(before, dict) and isinstance(after, dict):
+            for key in ("pid", "app_id", "resource_name", "resource_class"):
+                if key in before and key in after and before[key] != after[key]:
+                    return {"success": False, "question": "The selected window's identity changed. Please try again."}
+        self._emit_activity({"kind": "decision", "title": "Resolved the requested window from the live catalog",
+            "details": "Local model selection was restricted to observed window IDs and revalidated; no input was sent.",
+            "status": "planned"})
+        return {"success": True, "window_id": window_id}
 
     def _hydrate_window_context(self, structured_plan, transcript):
         """Give each window-control step its own target from the transcript.
@@ -1143,16 +1246,23 @@ class MistyAgent:
                 if named_clauses <= 1 and named_applied and not other_name:
                     return self._needs_every_window(first_named, len(actions))
                 used_clauses.add(clause_index)
-                if explicit is not None and not self._step_names_foreign_app(
-                    step, target
-                ):
-                    # A real model-chosen id stands when the transcript does
-                    # not clearly name a different application.
-                    arguments[slot] = explicit[1]
-                    continue
-                resolved, error = self._resolve_named_target(target, fuzzy)
+                if explicit is not None and self._is_bound_window_id(explicit[1]):
+                    # Reject a planner/shortcut value that merely LOOKS like
+                    # an identifier but names a different application than
+                    # the clause the user actually said.
+                    if not self._step_names_foreign_app(step, target):
+                        arguments[slot] = explicit[1]
+                        continue
+                resolved, error = self._resolve_named_target(target, fuzzy, step=step)
                 if error:
                     return error
+                if not self._is_bound_window_id(resolved):
+                    # Reasoning may have run while the catalog changed. A
+                    # planner value is never executed as a raw name; preflight
+                    # performs the final live ID check before any action.
+                    return self._window_error(
+                        "The selected window is no longer available. No window action was executed."
+                    )
                 arguments[slot] = resolved
                 named_applied += 1
                 if first_named is None:
@@ -1170,7 +1280,21 @@ class MistyAgent:
                 continue
 
             if explicit is not None:
-                arguments[slot] = explicit[1]
+                # A clarification can be just a name ("Dolphin"), without
+                # another imperative. It is still user language, not a bound
+                # ID. Preserve opaque IDs/references; bind a literal answer
+                # through the same catalog path as a full named command.
+                answer = transcript.strip().rstrip(".!?")
+                strip_filler = getattr(self.registry, "_strip_target_filler", None)
+                if callable(strip_filler):
+                    answer = strip_filler(answer)
+                if "$steps." not in explicit[1] and explicit[1].casefold() == answer.casefold():
+                    resolved, error = self._resolve_named_target(explicit[1], True, step=step)
+                    if error:
+                        return error
+                    arguments[slot] = resolved
+                else:
+                    arguments[slot] = explicit[1]
                 continue
 
             # Deictic or omitted target for this step: the listening
@@ -1237,21 +1361,16 @@ class MistyAgent:
                 continue
             normalized = window_id.strip().casefold()
             resolution = self.registry.resolve_window_target(
-                window_id, allow_fuzzy=normalized in WINDOW_ID_ALIASES
+                window_id, allow_fuzzy=normalized not in WINDOW_ID_ALIASES
             )
             if not isinstance(resolution, dict):
+                # A resolver that cannot answer must never be read as "this
+                # ID is wrong"; let the tool report its own service failure.
                 continue
             if resolution.get("success") is True and resolution.get(
                 "window_id"
             ):
                 arguments["window_id"] = str(resolution["window_id"])
-                continue
-            if not resolution.get("ambiguous") and not resolution.get(
-                "match"
-            ) and not str(resolution.get("message", "")).startswith(
-                "No open window"
-            ):
-                # A registry/list failure is reported by the tool itself.
                 continue
             if resolution.get("ambiguous"):
                 choices = "; ".join(
@@ -1275,10 +1394,27 @@ class MistyAgent:
                         extra,
                     )
                 return message
-            return (
-                f"I couldn't find a window matching '{window_id}'. "
-                "Which window did you mean?"
+            failure_message = resolution.get("message")
+            not_found = (
+                isinstance(failure_message, (str, type(None)))
+                and not resolution.get("match")
+                and (not failure_message or str(failure_message).startswith("No open window"))
             )
+            if not_found and normalized not in WINDOW_ID_ALIASES:
+                # The shortcut/planner may still carry the user's raw name.
+                # Bind it to a live catalog ID, or ask; never execute a name.
+                semantic = self._reason_named_window(window_id)
+                if isinstance(semantic, dict) and semantic.get("success") is True:
+                    arguments["window_id"] = str(semantic["window_id"])
+                    continue
+                question = semantic.get("question") if isinstance(semantic, dict) else None
+                if isinstance(question, str) and question.strip():
+                    return self._window_error(question.strip()[:500])
+                return self._window_error(
+                    f"I couldn't find a window matching '{window_id}'. Which window did you mean?"
+                )
+            # A registry/list failure is left to the tool's own error report.
+            continue
         return None
 
     def _request_names_multiple_targets(self, actions, pairs):
@@ -1303,8 +1439,9 @@ class MistyAgent:
 
         Returns the user-facing answer when the desktop path was taken. The
         legacy loop needs an input backend, vision service and task approval.
-        Explicit Cua selection instead takes the read-only capability gate;
-        absent capabilities never silently fall back to the legacy loop.
+        Explicit Cua selection takes the read-only capability gate; KWin
+        selection uses its native pilot/controller. Absent capabilities never
+        silently fall back to the legacy loop.
         """
         registry = self.registry
         from app.brain.task_grant import TaskGrant, looks_like_desktop_work
@@ -1323,6 +1460,11 @@ class MistyAgent:
                 return None
             from app.brain.desktop_controller import run_cua_readiness
             return run_cua_readiness(self)
+        if backend == "kwin":
+            if not looks_like_desktop_work(self, transcript):
+                return None
+            from app.brain.kwin_controller import run_kwin_task
+            return run_kwin_task(self, transcript)
         if getattr(registry, "input_backend", None) is None:
             return None
         if getattr(registry, "vision_service", None) is None:
@@ -1622,6 +1764,30 @@ class MistyAgent:
             return f"{label} ({', '.join(codes)})"
         return label
 
+    @staticmethod
+    def _research_sources(entries):
+        """Bounded public sources from successful web_research results."""
+        sources = []
+        for entry in entries or ():
+            if entry.get("tool") != "web_research" or entry.get("status") != "success":
+                continue
+            result = entry.get("result")
+            if not isinstance(result, dict) or result.get("success") is not True:
+                continue
+            for item in result.get("results") or []:
+                if not isinstance(item, dict):
+                    continue
+                url, text = item.get("url"), item.get("text")
+                if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                    continue
+                title = item.get("title")
+                sources.append({
+                    "title": title[:300] if isinstance(title, str) else "",
+                    "url": url[:2000],
+                    "text": text[:4000] if isinstance(text, str) else "",
+                })
+        return sources[:5]
+
     def _build_execution_report(
         self,
         original_plan,
@@ -1654,9 +1820,18 @@ class MistyAgent:
             entry.get("status") == "success" for entry in recovery_entries
         )
 
+        # A recovery "completed" the request only when it actually found
+        # something. A search that succeeded with zero results recovered nothing.
+        weak_entries = [
+            entry.get("status") != "success"
+            or not isinstance(entry.get("result"), dict)
+            or entry["result"].get("success") is not True
+            or entry["result"].get("count") == 0
+            for entry in recovery_entries
+        ]
         if original_failed == 0:
             outcome = "completed"
-        elif recovery_succeeded:
+        elif recovery_succeeded and not any(weak_entries):
             outcome = "recovered"
         else:
             outcome = "failed"
@@ -1684,11 +1859,19 @@ class MistyAgent:
                 "still reported as failed, and no failed action was "
                 "retried or rolled back."
             )
+        elif recovery_entries and self._research_sources(original_entries):
+            # The original research DID retrieve sources; only a redundant
+            # retry or a local-document search missed. Lead with that.
+            summary = (
+                "Web research retrieved readable sources for this request; "
+                "cite them in the answer. A follow-up read-only step ran "
+                "afterwards but was not needed."
+            )
         elif recovery_entries:
             summary += (
                 f" A read-only recovery was attempted ({len(recovery_entries)} "
-                f"action(s): {recovery_names}) but the task still did not "
-                "complete. The original failures stand."
+                f"action(s): {recovery_names}) but it did not supply what the "
+                "request needed. The original failures stand."
             )
         elif outcome == "failed" and counts["valid"]:
             failed_entries = [
@@ -2330,6 +2513,8 @@ class MistyAgent:
                 context.get("session")
             )
 
+        structured_override = None
+
         # A clarification answer is a fragment ("Downloads"); conversational
         # and direct shortcuts must not hijack it. Only plan it in context.
         if pending_clarification is None:
@@ -2353,11 +2538,24 @@ class MistyAgent:
             if direct_action is not None:
                 return self._execute_direct_action(direct_action)
 
-            # A task that needs to SEE and OPERATE an application is not a
-            # plan over tools; the next step depends on what the last one
-            # produced. The model decides which shape is needed (no keyword
-            # list), and only when it says "desktop" do we take that path.
-            desktop_answer = self._maybe_run_desktop_task(transcript)
+            # A simple window move has an exact tool and needs no screen
+            # interpretation or model-generated plan. It still goes through
+            # the normal validator, target resolution, policy and executor.
+            candidate = window_move_plan(transcript)
+            if (candidate is None and not self._has_pending_clarification(context)):
+                candidate = window_control_plan(transcript)
+            if (candidate is not None and not self._has_pending_clarification(context)
+                    and any(
+                definition.get("function", {}).get("name")
+                == candidate["steps"][0]["tool"]
+                for definition in self.registry.available_tools())):
+                structured_override = candidate
+
+            # Only content-level GUI interaction belongs in the visual loop.
+            # Supported structured operations must not be intercepted merely
+            # because their request contains "screen" or "window".
+            desktop_answer = (None if structured_override is not None
+                              else self._maybe_run_desktop_task(transcript))
             if desktop_answer is not None:
                 return desktop_answer
 
@@ -2392,7 +2590,8 @@ class MistyAgent:
         task_status = "failed"
 
         try:
-            self.start()
+            if structured_override is None:
+                self.start()
 
             request_id = uuid.uuid4().hex
             if self.task_journal is not None:
@@ -2425,30 +2624,23 @@ class MistyAgent:
             if session_context is not None:
                 planning_data["session_context"] = session_context
 
-            planning_message = self._chat(
-                [
-                    {"role": "system", "content": planning_prompt},
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            planning_data, ensure_ascii=False
-                        ),
-                    },
-                ],
-                tools=[],
-                response_format={"type": "json_object"},
-            )
-
-            raw_plan = planning_message.get("content")
-            if not isinstance(raw_plan, str) or not raw_plan.strip():
-                raise PlanValidationError("Qwen returned an empty task plan.")
-
-            try:
-                structured_plan = json.loads(raw_plan)
-            except json.JSONDecodeError as error:
-                raise PlanValidationError(
-                    f"Qwen returned invalid plan JSON: {error}"
-                ) from error
+            if structured_override is not None:
+                structured_plan = structured_override
+            else:
+                planning_message = self._chat(
+                    [
+                        {"role": "system", "content": planning_prompt},
+                        {"role": "user", "content": json.dumps(planning_data, ensure_ascii=False)},
+                    ],
+                    tools=[], response_format={"type": "json_object"},
+                )
+                raw_plan = planning_message.get("content")
+                if not isinstance(raw_plan, str) or not raw_plan.strip():
+                    raise PlanValidationError("Qwen returned an empty task plan.")
+                try:
+                    structured_plan = json.loads(raw_plan)
+                except json.JSONDecodeError as error:
+                    raise PlanValidationError(f"Qwen returned invalid plan JSON: {error}") from error
 
             # Validate structure before any window lookup, so a file-move or
             # other non-window request can never be reinterpreted as a window
@@ -2994,22 +3186,59 @@ class MistyAgent:
                 "execution_summary": summary,
                 "execution_results": execution_results,
             }
+            # Retrieved public research is bounded source material; without it
+            # the answer model can only restate tool status. Page text stays
+            # untrusted data, and is only ever sent to the local model.
+            research = self._research_sources(execution_results)
+            if research:
+                final_data["research_sources"] = research
 
             final_answer = ""
-            try:
-                final_message = self._chat(
-                    [
-                        {"role": "system", "content": final_prompt},
-                        {
-                            "role": "user",
-                            "content": json.dumps(final_data, ensure_ascii=False),
-                        },
-                    ],
-                    tools=[],
-                )
-                final_answer = (final_message.get("content") or "").strip()
-            except Exception as error:
-                print(f"[Misty] Final response generation failed: {error}", flush=True)
+            if structured_override is not None and original_plan.steps:
+                # Only window-specific deterministic plans take this path;
+                # their outcome is stated from verified tool state.
+                final_answer = window_control_summary(
+                    original_plan.steps[0].name, original_plan.steps[0].result)
+            else:
+                try:
+                    final_message = self._chat(
+                        [
+                            {"role": "system", "content": final_prompt},
+                            {"role": "user", "content": json.dumps(final_data, ensure_ascii=False)},
+                        ], tools=[],
+                    )
+                    final_answer = (final_message.get("content") or "").strip()
+                except Exception as error:
+                    print(f"[Misty] Final response generation failed: {error}", flush=True)
+                if outcome != "completed":
+                    # A model's prose cannot override authoritative failures.
+                    # Preserve useful successful tool messages (e.g. recovered
+                    # time) without inventing recovery/completion claims.
+                    messages = []
+                    for entry in execution_results:
+                        actual = entry.get("result")
+                        if entry.get("status") == "success" and isinstance(actual, dict) and actual.get("success") is True:
+                            message = actual.get("message")
+                            if isinstance(message, str) and message.strip():
+                                messages.append(f"{entry['tool']}: {message.strip()[:500]}")
+                        if len(messages) >= 4:
+                            break
+                    final_answer = "\n".join(messages)
+                    if self._research_sources(execution_results):
+                        # Retrieved sources are in final_data.research_sources;
+                        # let the answer model summarise them under the
+                        # source-led summary instead of a bare tool list.
+                        try:
+                            summarized = self._chat([
+                                {"role": "system", "content": final_prompt},
+                                {"role": "user", "content": json.dumps(
+                                    {**final_data, "execution_summary": summary},
+                                    ensure_ascii=False)},
+                            ], tools=[])
+                            candidate = (summarized.get("content") or "").strip()
+                            final_answer = candidate
+                        except Exception as error:
+                            print(f"[Misty] Research summary failed: {error}", flush=True)
 
             # "completed" only when the original user intent completed.  The
             # task journal accepts completed/failed/cancelled only, so a

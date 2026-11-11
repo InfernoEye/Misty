@@ -158,21 +158,31 @@ class WebResearchToolTests(unittest.TestCase):
 
 
 class ResearchRelevanceTests(unittest.TestCase):
-    """A result must cover the topic, not share one incidental word."""
+    """Relevance ranks which results to read first; it is not a hard gate.
 
-    def test_partial_topic_overlap_is_not_relevant(self):
+    Hard filtering by surface words dropped real answers whose headlines
+    paraphrase the query, so a word-overlap signal now only moves results
+    ahead of unrelated top hits. A single shared subject word qualifies.
+    """
+
+    def test_shared_subject_word_is_relevant(self):
         from app.brain.tools import _relevant_research_result
 
         query = "newest Linux vulnerability"
-        self.assertFalse(_relevant_research_result(query, {
+        self.assertTrue(_relevant_research_result(query, {
             "title": "Windows vulnerability patched",
             "snippet": "Microsoft fixed a Windows vulnerability",
             "url": "https://example.org/a",
         }))
-        self.assertFalse(_relevant_research_result(query, {
+        self.assertTrue(_relevant_research_result(query, {
             "title": "Download Linux",
             "snippet": "Linux downloads and mirrors",
             "url": "https://example.org/b",
+        }))
+        self.assertFalse(_relevant_research_result(query, {
+            "title": "Weather forecast for tomorrow",
+            "snippet": "Rain expected",
+            "url": "https://example.org/d",
         }))
         self.assertTrue(_relevant_research_result(query, {
             "title": "Linux kernel vulnerability fixed",

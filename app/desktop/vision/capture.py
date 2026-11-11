@@ -183,7 +183,13 @@ class CaptureService:
         mode: str = "desktop",
         screen_name: str | None = None,
         window_id: str | None = None,
+        *,
+        visible_region_only: bool = False,
     ) -> CaptureResult:
+        if not isinstance(visible_region_only, bool):
+            raise ValueError("visible_region_only must be a boolean")
+        if visible_region_only and mode != "window":
+            raise ValueError("visible_region_only is only valid for mode=window")
         if mode not in {"desktop", "active_window", "screen", "window"}:
             raise ValueError(
                 "mode must be desktop, active_window, screen, or window"
@@ -209,6 +215,7 @@ class CaptureService:
                 window_id.strip(),
                 missing_message="The requested window is no longer available",
                 minimized_message="The requested window is minimized",
+                visible_region_only=visible_region_only,
             )
             capture_kind = "visible_region"
         else:
@@ -319,8 +326,12 @@ class CaptureService:
         window_id: str,
         missing_message: str,
         minimized_message: str,
+        *,
+        visible_region_only: bool = False,
     ) -> tuple[Image.Image, dict[str, Any], tuple[str, ...]]:
-        if self.kwin_capture is not None:
+        # Foreground pilots must observe exactly the visible desktop crop, not
+        # a native/off-screen client image with unproven input coordinates.
+        if self.kwin_capture is not None and not visible_region_only:
             try:
                 direct = self.kwin_capture.capture_window(window_id)
             except Exception:

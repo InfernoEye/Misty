@@ -37,7 +37,12 @@ class MistyPopup(QWidget):
             Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.WindowDoesNotAcceptFocus
         )
+        # Voice feedback and mouse approval must not replace the user's
+        # foreground target. This is not a guarantee of compositor behavior;
+        # native input still rechecks the exact active target before dispatch.
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.setFixedWidth(390)
@@ -204,12 +209,14 @@ class MistyPopup(QWidget):
         self.confirmation_title = QLabel("Confirm this action?")
         self.confirmation_title.setObjectName("confirmationTitle")
         self.confirmation_title.setWordWrap(True)
+        self.confirmation_title.setTextFormat(Qt.TextFormat.PlainText)
 
         self.confirmation_description = QLabel()
         self.confirmation_description.setObjectName(
             "confirmationDescription"
         )
         self.confirmation_description.setWordWrap(True)
+        self.confirmation_description.setTextFormat(Qt.TextFormat.PlainText)
 
         confirmation_buttons = QHBoxLayout()
         confirmation_buttons.setSpacing(8)
@@ -244,7 +251,7 @@ class MistyPopup(QWidget):
         )
         self.footer_label.setObjectName("footer")
 
-        hint = QLabel("ESC TO HIDE")
+        hint = QLabel("VOICE / MOUSE")
         hint.setObjectName("footer")
 
         footer.addWidget(self.footer_label)
@@ -733,7 +740,8 @@ class MistyPopup(QWidget):
 
         self.show()
         self.raise_()
-        self.activateWindow()
+        # Keep keyboard focus with the application the user was operating.
+        # Confirmation buttons remain mouse-operable on this non-focus window.
 
     def _animate(self):
         active = self.state in ("listening", "transcribing", "thinking", "acting")

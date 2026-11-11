@@ -2690,6 +2690,18 @@ RESEARCH_STOPWORDS = frozenset({
     "the", "a", "an", "of", "for", "and", "or", "to", "in", "on",
     "about", "research", "summarize", "summarise", "find", "latest",
     "newest", "recent", "today", "news", "tell", "me", "please",
+    # Request framing, not the subject: "what happened with the elections in
+    # X" is about X's elections. Short place names ("us", "uk", "eu") stay
+    # topic words; generic question words do not identify a topic.
+    "info", "information", "summary", "give", "get", "need", "want", "know",
+    "current", "currently", "this", "that", "it", "what", "which", "who",
+    "when", "where", "why", "how", "happened", "happening", "going", "there",
+    "any", "some", "been", "was", "were", "has", "have", "had", "is", "are",
+    "do", "does", "did", "can", "could", "would", "should", "you",
+    # Prepositions and common verbs/conjunctions carry no subject.
+    "with", "without", "from", "into", "over", "under", "between", "at", "by",
+    "as", "if", "but", "so", "than", "very", "just", "also", "still", "more",
+    "most", "will", "make", "made", "take", "took", "say", "said",
 })
 NEWS_QUERY_WORDS = frozenset({
     "newest", "latest", "recent", "today", "news", "vulnerability",
@@ -2702,23 +2714,60 @@ BLOCKED_RESEARCH_HOSTS = (
 )
 
 
+_BOILERPLATE = re.compile(
+    r"\b(?:cookies?|consent|subscribe|newsletter|sign\s+up|advertisement|"
+    r"featured\s+funds|market\s+dashboard|benchmarks?|nifty|sensex|"
+    r"share\s+(?:this|on)|follow\s+us|all\s+rights\s+reserved|"
+    r"privacy\s+policy|terms\s+of\s+(?:use|service))\b",
+    re.IGNORECASE,
+)
+
+
+MAX_EXTRA_RESEARCH_CANDIDATES = 5
+MIN_RESEARCH_TEXT = 200
+
+
+def _readable_excerpt(text, limit):
+    """Drop navigation/ad boilerplate lines, then bound the article text.
+
+    Generic filtering only: no topic words and no site list, so an unrelated
+    query benefits the same way.
+    """
+    kept, total = [], 0
+    for line in re.split(r"\n+", str(text or "")):
+        candidate = " ".join(line.split())
+        if len(candidate) < 40 or _BOILERPLATE.search(candidate):
+            continue
+        kept.append(candidate)
+        total += len(candidate) + 1
+        if total >= limit:
+            break
+    excerpt = "\n".join(kept).strip()
+    # Very short pages may still be mostly readable in one run-on line.
+    return (excerpt or " ".join(str(text or "").split()))[:limit]
+
+
 def _clean_research_query(query):
     value = str(query).strip()
-    value = re.sub(
-        r"^(?:please\s+)?(?:research|look up|search for|find|"
-        r"tell me about)\s+",
-        "",
-        value,
-        flags=re.IGNORECASE,
+    # Search engines prefer noun phrases. Question framing ("how do I", "what
+    # is", "who won") does not help retrieval and can return nothing at all.
+    framing = re.compile(
+        r"(?:(?:please\s+)?(?:can|could|would)\s+you\s+(?:please\s+)?)?"
+        r"(?:how\s+(?:do|can|could|would|should|to)\s+(?:i|we|you)\s+|"
+        r"how\s+to\s+|what(?:'s|\s+is|\s+are|\s+was|\s+were)\s+|"
+        r"who\s+(?:is|are|was|were|won|wins|leads)\s+|"
+        r"why\s+(?:is|are|was|were|did|does|do)\s+|"
+        r"where\s+(?:is|are|was|were|can)\s+|when\s+(?:is|are|was|were|did)\s+)",
+        re.IGNORECASE,
     )
-    value = re.sub(
-        r"\s+(?:and\s+)?(?:summari[sz]e|summarise)\s+"
-        r"(?:it|this|that)?\s*$",
-        "",
-        value,
-        flags=re.IGNORECASE,
-    )
-    return value.strip() or str(query).strip()
+    value = framing.sub("", value, count=1).strip()
+    value = re.sub(r"^(?:please\s+)?(?:research|look up|search for|find|"
+                   r"tell me about)\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+(?:and\s+)?(?:summari[sz]e|summarise)\s+"
+                   r"(?:it|this|that)?\s*$", "", value, flags=re.IGNORECASE)
+    cleaned = value.strip()
+    # Never return a mangled fragment of the user's words.
+    return cleaned if len(cleaned) >= 3 else str(query).strip()
 
 
 def _is_news_query(query):
@@ -2727,32 +2776,39 @@ def _is_news_query(query):
 
 
 def _research_topic_tokens(query):
+    """Subject words of a research query.
+
+    Two-letter tokens matter: "us", "uk" and "eu" are place names, while
+    "to", "in" and "on" are already stopwords. Single letters carry no topic.
+    """
     return {
         token for token in re.findall(r"[a-z0-9]+", str(query).casefold())
-        if len(token) >= 3 and token not in RESEARCH_STOPWORDS
+        if len(token) >= 2 and token not in RESEARCH_STOPWORDS
     }
 
 
 def _relevant_research_result(query, item):
+    """True when a search result shares a subject word with the query.
+
+    This no longer gates everything: it ranks results so that a result sharing
+    the topic is preferred, while the top result is still tried when nothing
+    matches superficially (real headlines paraphrase the query). It is generic
+    word overlap - no topic or site lists.
+    """
     if not isinstance(item, dict):
         return False
     url = str(item.get("url", "")).casefold()
     if any(host in url for host in BLOCKED_RESEARCH_HOSTS):
         return False
-    topic = _research_topic_tokens(query)
+    topic = _research_topic_tokens(query.casefold())
     if not topic:
         return True
     title_and_snippet = " ".join(
         str(item.get(field, ""))
         for field in ("title", "snippet")
     ).casefold()
-    # A result must cover most of the topic, not just one incidental word:
-    # "newest Windows vulnerability" must not accept a result that merely
-    # mentions "vulnerability". Very short topics still need all of their
-    # tokens because a single shared word says nothing about relevance.
-    matched = [token for token in topic if token in title_and_snippet]
-    required = len(topic) if len(topic) <= 2 else (len(topic) + 1) // 2
-    return len(matched) >= required
+    words = set(re.findall(r"\w+", title_and_snippet))
+    return any(token in words for token in topic)
 
 
 def _vague_search_query(query):
@@ -2937,8 +2993,18 @@ class ToolRegistry:
         service is available, so a bad coordinate fails here instead of
         moving the user's pointer somewhere unintended.
         """
-        # Explicit Cua selection cannot reach legacy pointer input through a
-        # static-plan/tool-call back door. The staged Cua backend is read-only.
+        # A native pilot owns the whole local input transaction. Even a
+        # concurrent legacy selection must not interleave pointer/keyboard
+        # actions with it; only the pilot's provider may send its approved input.
+        from app.desktop.ownership import native_task_active
+        if native_task_active():
+            return {
+                "success": False, "not_executed": True,
+                "code": "desktop_busy",
+                "message": "A native desktop task owns input. Nothing was executed.",
+            }
+        # Explicit Cua/KWin selection cannot reach legacy pointer input through
+        # a static-plan/tool-call back door. Their controller owns admission.
         from app.settings import load_desktop_backend
         try:
             selected_backend = load_desktop_backend()
@@ -3730,7 +3796,7 @@ class ToolRegistry:
     def _window_identity_fields(window):
         """Return normalized application-identity strings for one window."""
         def normalize(value):
-            return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+            return "".join(char for char in str(value or "").casefold() if char.isalnum())
 
         return {
             field: normalize(window.get(field, ""))
@@ -3740,10 +3806,33 @@ class ToolRegistry:
         }
 
     @staticmethod
+    def _window_application_names(window):
+        """Names from live app identity, including reverse-DNS desktop IDs.
+
+        Keep the actual application leaf, not generic namespace components
+        such as 'org' or 'kde'. This is metadata normalization, not a brand
+        alias list. A terminal title mentioning an app must not outrank it.
+        """
+        names = set()
+        for field in ("app_id", "resource_name", "resource_class", "desktop_file"):
+            raw = window.get(field)
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            leaf = raw.strip().replace("\\", "/").rsplit("/", 1)[-1]
+            if leaf.casefold().endswith(".desktop"):
+                leaf = leaf[:-8]
+            leaf = leaf.rsplit(".", 1)[-1]
+            for value in (leaf, re.split(r"[-_\s]+", leaf, maxsplit=1)[0]):
+                normalized = "".join(char for char in value.casefold() if char.isalnum())
+                if len(normalized) >= 3:
+                    names.add(normalized)
+        return names
+
+    @staticmethod
     def _window_identity_tokens(window):
         """Tokenize application identity (never window title text)."""
         tokens = set()
-        for field in ("app_id", "resource_name", "resource_class"):
+        for field in ("app_id", "resource_name", "resource_class", "desktop_file"):
             for token in re.findall(
                 r"[^\W_]+", str(window.get(field, "") or "").casefold()
             ):
@@ -3768,7 +3857,7 @@ class ToolRegistry:
         request naming the application itself both drop the fuzzy tiers.
         """
         def normalize(value):
-            return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+            return "".join(char for char in str(value or "").casefold() if char.isalnum())
 
         query = normalize(window_id)
         query_tokens = self._window_title_tokens(window_id)
@@ -3782,7 +3871,7 @@ class ToolRegistry:
             if not isinstance(window, dict):
                 continue
             identity = self._window_identity_fields(window)
-            identity_values = set(identity.values()) - {""}
+            identity_values = (set(identity.values()) - {""}) | self._window_application_names(window)
             title_raw = str(window.get("title", "") or "").casefold()
             title = normalize(title_raw)
             if query in identity_values:
@@ -3818,9 +3907,7 @@ class ToolRegistry:
                 for window in windows:
                     if not isinstance(window, dict):
                         continue
-                    values = set(
-                        self._window_identity_fields(window).values()
-                    ) - {""}
+                    values = (set(self._window_identity_fields(window).values()) - {""}) | self._window_application_names(window)
                     if alias_query in values and window not in aliased:
                         aliased.append(window)
             if aliased:
@@ -3984,7 +4071,7 @@ class ToolRegistry:
             return []
 
         fields = (
-            ("app_id", "resource_name", "resource_class")
+            ("app_id", "resource_name", "resource_class", "desktop_file")
             if scope == "identity"
             else ("title",)
         )
@@ -5564,30 +5651,63 @@ class ToolRegistry:
                 }
 
             research_query = _clean_research_query(query)
-            categories = "news" if _is_news_query(research_query) else None
+            news = _is_news_query(research_query)
+            # News indexes are multilingual: forcing one language leaves very
+            # few usable pages for an otherwise valid query. General search
+            # keeps English to match the request's usual language.
             search_result = self.web_search_client.search(
                 research_query,
                 limit=max(pages * 2, pages),
-                categories=categories,
-                language="en",
+                categories="news" if news else None,
+                language=None if news else "en",
             )
+            # Only a genuinely empty result set is retried; an unsuccessful
+            # search keeps its own error for the caller.
+            if (search_result.get("success") is True
+                    and not search_result.get("results")):
+                # A strict filter can legitimately yield nothing; retry the
+                # same query broadly before reporting that nothing was found.
+                broad = self.web_search_client.search(
+                    research_query, limit=max(pages * 2, pages),
+                )
+                if broad.get("success") is True and broad.get("results"):
+                    search_result = broad
             if search_result.get("success") is not True:
                 return search_result
 
+            candidates = [
+                item for item in search_result.get("results", [])
+                if isinstance(item, dict)
+            ]
+            # Search rank still decides; results that share the query's words
+            # are tried first so an unrelated top hit (an ad, a hub page)
+            # cannot crowd out a page that actually discusses the topic.
+            ranked = sorted(
+                candidates,
+                key=lambda item: not _relevant_research_result(research_query, item),
+            )
+            # Prefer pages whose headlines name the subject. Weak matches are
+            # not evidence on their own, but every fetched result carries its
+            # headline so the answering model can judge fit and ignore the rest.
+            topical = [item for item in ranked
+                       if _relevant_research_result(research_query, item)]
+            candidates = topical or ranked
             collected = []
             errors = 0
-            for item in search_result.get("results", []):
+            attempted = set()
+            # Try one extra candidate when the top hit turns out to be
+            # unreadable, without unbounded fetching.
+            for item in candidates:
                 if len(collected) >= pages:
                     break
-                if not isinstance(item, dict):
-                    continue
-                if (
-                    _is_news_query(research_query)
-                    and not _relevant_research_result(research_query, item)
-                ):
-                    errors += 1
-                    continue
+                # A short walk down the ranked list beats reporting nothing
+                # when the search engine returns weak matches for a vague query.
+                if len(attempted) >= pages + MAX_EXTRA_RESEARCH_CANDIDATES:
+                    break
                 url = item.get("url")
+                if not isinstance(url, str) or url in attempted:
+                    continue
+                attempted.add(url)
                 if not isinstance(url, str):
                     continue
                 try:
@@ -5602,13 +5722,22 @@ class ToolRegistry:
                 except WebFetchError:
                     errors += 1
                     continue
-                if len(fetched.text.strip()) < 200:
+                body = _readable_excerpt(fetched.text, 4_000)
+                if len(body) < MIN_RESEARCH_TEXT:
+                    # A stub page (notice, paywall, empty feed) is not source
+                    # material; try the next ranked result instead.
                     errors += 1
                     continue
                 collected.append({
-                    "title": fetched.title[:300],
+                    # A feed page's own <title> is generic ("From Wikinews…");
+                    # the specific search-result headline identifies the item.
+                    "title": (str(item.get("title") or "").strip()
+                              or fetched.title)[:300],
                     "url": fetched.final_url,
-                    "text": fetched.text[:4_000],
+                    # Page text is untrusted data. Navigation, ads and fund
+                    # tickers crowd out the actual article at this size, so
+                    # keep only readable sentences before bounding.
+                    "text": body,
                     "search_snippet": str(
                         item.get("snippet", "")
                     )[:500],

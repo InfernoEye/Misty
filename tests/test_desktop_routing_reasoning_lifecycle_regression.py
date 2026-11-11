@@ -20,7 +20,7 @@ class DesktopRoutingLifecycleRegressionTests(unittest.TestCase):
         agent = Mock()
         agent._chat.side_effect = RuntimeError("model unavailable")
         self.assertFalse(looks_like_desktop_work(agent, "what time is it"))
-        self.assertEqual(agent._chat.call_count, 2)
+        agent._chat.assert_not_called()
 
     def test_malformed_classifier_uses_explicit_screen_fallback(self):
         agent = Mock()

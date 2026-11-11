@@ -543,6 +543,7 @@ callDBus(
         if not isinstance(screen_name, str) or not screen_name.strip() or len(screen_name) > 256:
             return {"success": False, "message": "A valid destination display name is required."}
 
+        operation_admitted = False
         try:
             if self._startup_error:
                 raise RuntimeError(str(self._startup_error))
@@ -610,29 +611,34 @@ if (target === null) {
         success: false,
         message: "More than one display matches. Please specify DP-1, DP-2, or DP-3."
     };
-} else if (!target.moveableAcrossScreens) {
-    result = {
-        success: false,
-        message: "This window cannot be moved to another display."
-    };
 } else {
     var destination = matches[0];
     var title = String(target.caption || "Untitled window");
+    var previousScreen = target.output ? String(target.output.name || "") : "";
 
-    if (target.output && target.output.name === destination.name) {
+    if (previousScreen === String(destination.name || "")) {
         result = {
             success: true,
-            message: title + " is already on " + destination.name + ".",
+            message: "Window was already on the requested display; verifying current state.",
             title: title,
-            screen: destination.name
+            requested_screen: String(destination.name || ""),
+            previous_screen: previousScreen,
+            move_requested: false
+        };
+    } else if (!target.moveableAcrossScreens) {
+        result = {
+            success: false,
+            message: "This window cannot be moved to another display."
         };
     } else {
         workspace.sendClientToScreen(target, destination);
         result = {
             success: true,
-            message: "Moved " + title + " to " + destination.name + ".",
+            message: "Window monitor move requested; verifying current state.",
             title: title,
-            screen: destination.name
+            requested_screen: String(destination.name || ""),
+            previous_screen: previousScreen,
+            move_requested: true
         };
     }
 }
@@ -685,6 +691,7 @@ callDBus(
                     raise RuntimeError("KWin did not return a script ID.")
                 loaded = True
 
+                operation_admitted = True
                 self._qdbus(
                     "org.kde.KWin",
                     f"/Scripting/Script{script_id}",
@@ -694,7 +701,9 @@ callDBus(
                 result = json.loads(future.result(timeout=8))
                 if not isinstance(result, dict) or not isinstance(result.get("success"), bool):
                     raise RuntimeError("KWin returned an invalid monitor-move result.")
-                return result
+                if result["success"] is not True:
+                    return {**result, "verified": False, "changed": False, "not_executed": True}
+                return self._verify_window_move(window_id, result)
             finally:
                 with self._pending_lock:
                     self._pending.pop(request_id, None)
@@ -716,8 +725,69 @@ callDBus(
         except Exception as error:
             return {
                 "success": False,
+                "verified": False,
+                "uncertain": operation_admitted,
+                "not_executed": not operation_admitted,
                 "message": f"Window monitor move failed: {error}",
             }
+
+    def _verify_window_move(self, window_id, request):
+        """Read fresh KWin state once; never infer delivery from a request echo.
+
+        This is a read-only observation after the script acknowledgement, not a
+        replay of the move. A delayed/failed/unknown observation stays a failure
+        instead of claiming the requested destination is the actual output.
+        """
+        destination = request.get("requested_screen")
+        move_requested = request.get("move_requested")
+        previous = request.get("previous_screen")
+        common = {
+            "window_id": window_id,
+            "requested_screen": destination if isinstance(destination, str) else None,
+            "previous_screen": previous if isinstance(previous, str) else None,
+            "move_requested": move_requested if isinstance(move_requested, bool) else None,
+        }
+        failure = {
+            **common, "success": False, "verified": False,
+            "uncertain": True, "not_executed": move_requested is False,
+            "code": "window_move_unverified",
+        }
+        if not isinstance(destination, str) or not destination or not isinstance(move_requested, bool):
+            return {**failure, "message": "The monitor move could not be verified: KWin returned incomplete destination evidence."}
+        try:
+            snapshot = self._query()
+            windows = snapshot.get("windows") if isinstance(snapshot, dict) else None
+            if not isinstance(windows, list):
+                raise ValueError("Missing window list")
+            matches = [window for window in windows
+                       if isinstance(window, dict) and window.get("id") == window_id]
+            if len(matches) != 1:
+                return {**failure, "message": "The monitor move could not be verified: the exact window is no longer uniquely available."}
+            window = matches[0]
+            actual = window.get("screen")
+            if not isinstance(actual, str) or not actual:
+                return {**failure, "message": "The monitor move could not be verified: the current output is unavailable."}
+            if actual != destination:
+                return {
+                    **failure, "code": "window_move_not_observed", "screen": actual,
+                    "message": f"The requested move to {destination} was not verified; the window is currently on {actual}.",
+                }
+            title = str(window.get("title") or request.get("title") or "Window")
+            already = move_requested is False
+            if already and previous != destination:
+                return {**failure, "message": "The monitor move could not be verified: inconsistent no-op evidence."}
+            changed = False if already else (previous != actual if isinstance(previous, str) and previous else None)
+            return {
+                **common, "success": True, "verified": True,
+                "screen": actual, "changed": changed,
+                "already_on_screen": already, "not_executed": already,
+                "message": (f"{title} is already on {actual}; no move was needed."
+                            if already else
+                            f"Moved {title} to {actual}; verified its current output." if changed is True else
+                            f"The monitor move was requested for {title}; verified its current output is {actual}."),
+            }
+        except Exception:
+            return {**failure, "message": "The monitor move was requested, but fresh KWin state could not verify its outcome."}
 
     def capture_active_window(self):
         """Remember the active non-Misty window before showing the popup."""

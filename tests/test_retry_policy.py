@@ -261,7 +261,9 @@ class AgentRetryTests(unittest.TestCase):
                     success("second attempt"),
                 ])
                 arguments = {
-                    "focus_window": {"window_id": "w1"},
+                    # A live-bound ID: preflight must admit the mutating call
+                    # this test wants the retry policy to exercise.
+                    "focus_window": {"window_id": "w1-id"},
                     "launch_app": {"app_id": "firefox"},
                 }.get(name, {})
                 response = plan_response([
@@ -476,7 +478,8 @@ class RecoveryAccountingTests(unittest.TestCase):
     def test_summary_never_claims_all_actions_succeeded(self):
         _agent, answer = self._recovered_agent()
 
-        self.assertIn("Recovered the time.", answer)
+        self.assertIn("get_time: 12:30", answer)
+        self.assertNotIn("Recovered the time.", answer)
         deterministic = answer.split("\n\n", 1)[1]
         self.assertIn("not fully completed", deterministic)
         self.assertIn("get_system_status", deterministic)

@@ -9,7 +9,7 @@ class FakeRegistry:
 
     def __init__(self, window=None, resolution=None, resolutions=None):
         self.window = window
-        self.resolution = resolution or {"success": False, "message": "none"}
+        self.resolution = resolution or {"success": False, "message": "No open window matches the target."}
         self.resolutions = dict(resolutions or {})
         self.lookups = []
         self.executed = []
@@ -22,6 +22,10 @@ class FakeRegistry:
         self.lookups.append((target, allow_fuzzy))
         if target in self.resolutions:
             return self.resolutions[target]
+        if target.endswith("-id"):
+            # Mirror the real resolver: an exact live ID succeeds unless a
+            # specific case explicitly says otherwise.
+            return {"success": True, "window_id": target, "match": "id_exact"}
         if callable(self.resolution):
             return self.resolution(target)
         return self.resolution
@@ -142,8 +146,8 @@ class WindowContextTests(unittest.TestCase):
         )
         self.assertIsNone(error)
         self.assertEqual(plan["steps"][0]["arguments"]["window_id"], "firefox-id")
-        # A real, non-alias id present in the plan is kept.
-        self.assertEqual(registry.lookups, [])
+        # A real ID is kept only after an exact live-catalog check.
+        self.assertEqual(registry.lookups, [("firefox-id", False)])
 
     def test_named_window_overrides_model_choice(self):
         plan = self.plan({
@@ -173,7 +177,7 @@ class WindowContextTests(unittest.TestCase):
         })
         error = self.agent(
             {"id": "console-id", "title": "Konsola"},
-            resolution={"success": False, "message": "none"},
+            resolution={"success": False, "message": "No open window matches the target."},
         )._hydrate_window_context(
             plan, "Move EquiCord to the main screen."
         )
@@ -199,16 +203,16 @@ class WindowContextTests(unittest.TestCase):
         )
         self.assertIn("Several windows", error)
 
-    def test_single_title_case_name_is_not_fuzzy_matched(self):
-        # A transcribed single Title-case word must not fuzzy-match some
-        # other application; only exact identity/title matches apply.
+    def test_single_title_case_name_uses_same_catalog_policy(self):
+        # Capitalization originates in the user transcript, not a model ID;
+        # it must not disable identity/alias matching. No match still asks.
         plan = self.plan()
         registry = FakeRegistry(None)
         error = MistyAgent(registry=registry)._hydrate_window_context(
             plan, "Move Equicord to the main screen."
         )
         self.assertIn("couldn't find", error)
-        self.assertEqual(registry.lookups, [("Equicord", False)])
+        self.assertEqual(registry.lookups, [("Equicord", True)])
 
     def test_brand_casing_still_allows_fuzzy_alias(self):
         # "EquiCord" is the brand spelling, not a plain Title-case echo.
@@ -220,7 +224,8 @@ class WindowContextTests(unittest.TestCase):
             plan, "Move EquiCord to the main screen."
         )
         self.assertIsNone(error)
-        self.assertEqual(registry.lookups, [("EquiCord", True)])
+        # Name lookup, then the bound ID's own live-catalog verification.
+        self.assertEqual(registry.lookups, [("EquiCord", True), ("discord-id", False)])
         self.assertEqual(
             plan["steps"][0]["arguments"]["window_id"], "discord-id"
         )
@@ -279,8 +284,11 @@ class WindowContextTests(unittest.TestCase):
         self.assertEqual(
             plan["steps"][1]["arguments"]["window_id"], "discord-id"
         )
+        # Each bound ID is verified against the live catalog before execution;
+        # the plan's original ID is verified once and then replaced.
         self.assertEqual(sorted(registry.lookups), [
-            ("Discord", False), ("Firefox", False),
+            ("Discord", True), ("Firefox", True), ("discord-id", False),
+            ("firefox-id", False), ("konsola-id", False), ("konsola-id", False),
         ])
 
     def test_two_named_windows_without_punctuation(self):

@@ -390,7 +390,9 @@ class RegistryEgressTests(unittest.TestCase):
             result.get("reason_code"),
             (REASON_EGRESS_PRIVATE, REASON_EGRESS_UNCERTAIN),
         )
-        self.assertEqual(self.searcher.calls, ["history of Warsaw"])
+        # The stub returns no results, so research retries the same query
+        # broadly once; the egress decision must stay autonomous both times.
+        self.assertEqual(self.searcher.calls, ["history of Warsaw"] * 2)
 
     def test_private_query_unconfirmed_is_refused(self):
         result = self.registry.execute(

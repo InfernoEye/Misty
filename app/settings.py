@@ -80,8 +80,9 @@ def save_shortcut(sequence):
 def load_desktop_backend(*, path=None, environ=None):
     """Explicit backend selection; malformed settings never fall back to input.
 
-    Default remains legacy until Cua live acceptance passes. The Cua option is
-    currently a read-only capability gate, not authorization for desktop input.
+    Default remains legacy. Cua is a read-only capability gate; kwin is an
+    explicitly selected native pilot whose controller owns capability/approval
+    checks. Selecting either never authorizes legacy pointer-tool fallback.
     """
     environ = os.environ if environ is None else environ
     value = environ.get("MISTY_DESKTOP_BACKEND")
@@ -98,6 +99,6 @@ def load_desktop_backend(*, path=None, environ=None):
         if not isinstance(data, dict) or set(data) - {"backend"}:
             raise ValueError("Desktop backend settings are malformed.")
         value = data.get("backend", "legacy")
-    if not isinstance(value, str) or value.strip().casefold() not in {"legacy", "cua"}:
-        raise ValueError("Desktop backend must be explicitly legacy or cua.")
+    if not isinstance(value, str) or value.strip().casefold() not in {"legacy", "cua", "kwin"}:
+        raise ValueError("Desktop backend must be explicitly legacy, cua or kwin.")
     return value.strip().casefold()

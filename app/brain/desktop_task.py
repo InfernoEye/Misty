@@ -18,6 +18,7 @@ on a purchase control is refused (``app.brain.tools.is_submit_target``).
 """
 
 import json
+import re
 
 from app.brain import agent_loop
 from app.brain.tools import DESKTOP_TOOL_NAMES, is_submit_target
@@ -364,7 +365,44 @@ def run_desktop_task(agent, goal, research="", vision=None, mode="desktop",
         )
     decide = make_decider(agent, goal, research=research)
     act = make_actor(agent, request_id=request_id)
-    return agent_loop.run_loop(
+    report = agent_loop.run_loop(
         observe, decide, act, max_rounds=max_rounds,
         budget_seconds=budget_seconds, on_step=on_step,
     )
+    # The loop decides from an OCR/caption DESCRIPTION, never from pixels, so
+    # its model cannot claim to have seen an interface it was only told about.
+    observed = False
+    return guard_desktop_completion(report, goal, images_used=observed)
+
+
+def guard_desktop_completion(report, goal, images_used=False):
+    """Model 'done' is not authoritative evidence that an action happened.
+
+    ``images_used`` records whether the loop observed actual pixels. Without
+    any image the "vision" model only read a text description, so its
+    conclusion cannot stand in for seeing the requested interface.
+    """
+    operational = re.match(
+        r"^\s*(?:(?:please|can you|could you|would you|will you|kindly)\s+)*"
+        r"(?:click|move|send|put|place|open|launch|start|navigate|go|type|fill|press|"
+        r"select|choose|scroll|drag|search|find|przenie[sś]|przesu[nń]|kliknij|otw[oó]rz|"
+        r"naci[sś]nij|wci[sś]nij|wci[sś]nij|naci[sś]ni[eę]cie|poka[zż]|zaznacz|wpisz|"
+        r"nawiguj|wyszukaj|wybierz|zamknij)\b",
+        str(goal or ""), re.I)
+    if report.status != "done" or not operational:
+        return report
+    if images_used:
+        # A pixel-grounded loop may already have excluded unavailable frames.
+        return report
+    from app.brain.policy import policy_for, is_read_only_effect
+    delivered = []
+    for step in report.actions:
+        policy = policy_for(step.tool)
+        if (isinstance(step.result, dict) and step.result.get("success") is True
+                and policy is not None and not is_read_only_effect(policy.effect)):
+            delivered.append(step)
+    if not delivered:
+        return agent_loop.LoopReport("unverified", report.steps,
+            "No state-changing action was executed. I cannot claim that the requested desktop action completed.")
+    return agent_loop.LoopReport("unverified", report.steps,
+        f"{len(delivered)} action(s) were delivered, but the requested desktop outcome was not independently verified.")

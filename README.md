@@ -13,7 +13,12 @@ on another machine. Provisioning is recorded in [MANIFEST.lock](MANIFEST.lock).
 Models, virtual environments, private runtime data and secrets are not shipped.
 See [repository contents and exclusions](docs/REPOSITORY_CONTENTS.md) for the exact
 publication boundary and [Desktop v2 capabilities](docs/DESKTOP_V2_CAPABILITIES.md)
-for the experimental Cua backend's current read-only gate.
+for the experimental Cua backend's current read-only gate. A separately selected
+[native KWin visual pilot](docs/NATIVE_KWIN_PILOT.md) now connects images/OCR tokens
+to the local visual model; it is enabled by selecting `kwin` (`MISTY_KWIN_INPUT=0` gives strict
+preview) and has no live acceptance claim yet. Ordinary structured tools, including window-focused
+and window/display operations, bypass visual routing and retain their own validation and policy. Web answers summarise and cite the
+sources the research tool actually retrieved; see [research quality](docs/RESEARCH_QUALITY.md).
 
 ## Architecture
 

@@ -386,9 +386,9 @@ class AgentPlannerIntegrationTests(unittest.TestCase):
         self.assertEqual(
             registry.executed, ["list_windows", "list_windows", "get_time"]
         )
-        # The recovery answer is followed by the deterministic report: the
-        # original failure is never erased by a successful recovery.
-        self.assertTrue(answer.startswith("Recovered."))
+        # Actual recovered tool data is followed by the deterministic report;
+        # generated prose cannot erase the original failure.
+        self.assertTrue(answer.startswith("get_time: 12:30"))
         self.assertIn("not fully completed", answer)
         self.assertIn("list_windows", answer)
         self.assertEqual(len(agent.chat_calls), 3)

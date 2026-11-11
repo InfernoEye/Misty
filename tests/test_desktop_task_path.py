@@ -171,7 +171,7 @@ class LoopTests(unittest.TestCase):
 
         answer = agent._maybe_run_desktop_task("open amazon and search")
 
-        self.assertIn("Search box focused", answer)
+        self.assertIn("not independently verified", answer)
         self.assertIn("1 action", answer)
         self.assertEqual(backend.kinds, ["pointer_click"])
 

@@ -212,10 +212,11 @@ class WindowTargetingTests(unittest.TestCase):
 
         def resolve(target, allow_fuzzy=False):
             lookups.append(target)
+            window_id = target if target.endswith("-id") else f"{target.casefold()}-id"
             return {
-                "success": True,
-                "window_id": f"{target.casefold()}-id",
-                "window": {"id": f"{target.casefold()}-id", "title": target},
+                "success": True, "window_id": window_id,
+                "window": {"id": window_id, "title": target},
+                "match": "id_exact" if target == window_id else "identity_exact",
             }
 
         registry = FakeRegistry()
@@ -247,13 +248,13 @@ class WindowTargetingTests(unittest.TestCase):
         ])
         self.assertEqual(
             [arguments.get("window_id") for arguments in registry.arguments],
-            ["firefox-id-id", "discord-id-id"],
+            ["firefox-id", "discord-id"],
         )
         self.assertEqual(
             [arguments.get("screen_name") for arguments in registry.arguments],
             ["left", "right"],
         )
-        self.assertEqual(len(lookups), 2)
+        self.assertEqual(lookups, ["firefox-id", "discord-id", "firefox-id", "discord-id"])
 
 
 class DirectRoutingTests(unittest.TestCase):
