@@ -54,6 +54,7 @@ MPRIS_PREFIX = "org.mpris.MediaPlayer2"
 PLAYER_NAME_PATTERN = re.compile(
     r"^org\.mpris\.MediaPlayer2(?:\.[A-Za-z0-9_-]+)+$"
 )
+DISPLAY_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,63}")
 
 ALLOWED_ACTIONS = frozenset(
     {"play", "pause", "play_pause", "next", "previous", "stop"}
@@ -253,6 +254,7 @@ class MediaController:
         """
         with self._lock:
             try:
+                player = self._resolve_requested_player(player)
                 self._validate_requested_player(player)
                 players = self._read_players()
                 selected = self._select_player(players, player)
@@ -296,6 +298,7 @@ class MediaController:
 
         with self._lock:
             try:
+                player = self._resolve_requested_player(player)
                 self._validate_requested_player(player)
                 players = self._read_players()
                 selected = self._select_player(players, player)
@@ -319,6 +322,14 @@ class MediaController:
         }
 
     # -- selection ----------------------------------------------------------
+
+    def _resolve_requested_player(self, player):
+        if not isinstance(player, str) or not DISPLAY_NAME_PATTERN.fullmatch(player):
+            return player
+        for item in self._read_players():
+            if item["identity"] == player:
+                return item["bus_name"]
+        raise _MediaFailure("no_player")
 
     @staticmethod
     def _validate_requested_player(player):

@@ -55,7 +55,7 @@ Native typing/insertion stays opt-in: `ydotool` needs the `input` group and a ru
 | Module | Status | Why it stays out |
 |---|---|---|
 | `app/brain/model_lease.py` | live | Created at app startup; the controller registers `reasoning` and drives load/unload through `hold_model()`. Ownership rule preserved: it never unloads a model another live request owns. |
-| `app/desktop/input.py` | abstraction only, no backend | Needs a deliberate input backend and permission decision (`ydotool` requires the `input` group and `/dev/uinput`). |
+| `app/desktop/input.py` | live through `ydotool` | Wired behind approval and the verified-pointer gate. Native input stays opt-in and requires the `input` group, `/dev/uinput` and a running `ydotoold`. |
 | `app/plugins/manifest.py` | validation only | No loader until trust, consent and signing are designed. |
 | `app/brain/recovery.py` | live as a policy input | Only decides whether one read-only replan is offered; the per-call retry lives in the agent. |
 
@@ -63,7 +63,7 @@ Native typing/insertion stays opt-in: `ydotool` needs the `input` group and a ru
 
 - **Browser fence is URL-based.** It blocks private literals and redirects at the router, but Chromium resolves DNS itself, so a rebinding server is only fully stopped by an egress proxy or firewall rule. Fetches bound at the socket layer are not affected.
 - **Local TTS** has no engine selected; voice feedback is off.
-- **Native text entry** is not wired: the input abstraction exists, but insertion needs the permission decision above.
+- **Native text entry** is wired through the opt-in `ydotool` backend (`desktop_type_text`) and fails closed when `ydotool` or `/dev/uinput` is unavailable.
 - **SearXNG** is optional; `web_search` is enabled when the local instance answers. Without it, only direct fetch and the isolated browser are available.
 - **OCRmyPDF** is installed under `data/pipx`; scanned-PDF fallback is live.
 - **Reproducibility** is documented in `README.md`, `requirements.txt` and `MANIFEST.lock`. The venv still inherits system site-packages; treat the pins as the authoritative set and the system packages as recorded prerequisites.

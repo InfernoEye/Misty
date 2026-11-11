@@ -49,11 +49,13 @@ __all__ = [
     "MIN_CLICK_COUNT",
     "MIN_COORDINATE",
     "PointerClick",
+    "PointerDrag",
     "PointerMove",
     "PressKey",
     "Scroll",
     "TypeText",
     "pointer_click",
+    "pointer_drag",
     "pointer_move",
     "press_key",
     "scroll",
@@ -81,7 +83,7 @@ MAX_BATCH_LIMIT = 100
 MAX_TIMEOUT_SECONDS = 30.0
 
 ACTION_KINDS = frozenset(
-    {"pointer_click", "pointer_move", "scroll", "type_text", "press_key"}
+    {"pointer_click", "pointer_move", "pointer_drag", "scroll", "type_text", "press_key"}
 )
 ALLOWED_BUTTONS = frozenset({"left", "middle", "right"})
 MODIFIER_ORDER = ("ctrl", "alt", "shift", "meta")
@@ -264,6 +266,27 @@ class PointerMove:
 
 
 @dataclass(frozen=True, slots=True)
+class PointerDrag:
+    start_x: int
+    start_y: int
+    end_x: int
+    end_y: int
+    screen: str = ""
+
+    def to_action(self) -> InputAction:
+        return InputAction(
+            "pointer_drag",
+            {
+                "start_x": _valid_coordinate(self.start_x),
+                "start_y": _valid_coordinate(self.start_y),
+                "end_x": _valid_coordinate(self.end_x),
+                "end_y": _valid_coordinate(self.end_y),
+                "screen": _valid_screen(self.screen),
+            },
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Scroll:
     dx: int
     dy: int
@@ -409,6 +432,14 @@ def pointer_move(x: int, y: int, screen: str = "") -> InputAction:
     return PointerMove(x=x, y=y, screen=screen).to_action()
 
 
+def pointer_drag(
+    start_x: int, start_y: int, end_x: int, end_y: int, screen: str = ""
+) -> InputAction:
+    return PointerDrag(
+        start_x=start_x, start_y=start_y, end_x=end_x, end_y=end_y, screen=screen
+    ).to_action()
+
+
 def scroll(dx: int, dy: int) -> InputAction:
     return Scroll(dx=dx, dy=dy).to_action()
 
@@ -428,12 +459,13 @@ def press_key(combo: str) -> InputAction:
 _FIELD_NAMES: dict[str, frozenset[str]] = {
     "pointer_click": frozenset({"x", "y", "button", "count", "screen"}),
     "pointer_move": frozenset({"x", "y", "screen"}),
+    "pointer_drag": frozenset({"start_x", "start_y", "end_x", "end_y", "screen"}),
     "scroll": frozenset({"dx", "dy"}),
     "type_text": frozenset({"text"}),
     "press_key": frozenset({"combo"}),
 }
 
-_SPEC_TYPES = (PointerClick, PointerMove, Scroll, TypeText, PressKey)
+_SPEC_TYPES = (PointerClick, PointerMove, PointerDrag, Scroll, TypeText, PressKey)
 
 
 def _from_canonical(kind: object, fields: object) -> InputAction:
@@ -458,6 +490,14 @@ def _from_canonical(kind: object, fields: object) -> InputAction:
         if kind == "pointer_move":
             return PointerMove(
                 x=fields["x"], y=fields["y"], screen=fields["screen"]
+            ).to_action()
+        if kind == "pointer_drag":
+            return PointerDrag(
+                start_x=fields["start_x"],
+                start_y=fields["start_y"],
+                end_x=fields["end_x"],
+                end_y=fields["end_y"],
+                screen=fields["screen"],
             ).to_action()
         if kind == "scroll":
             return Scroll(dx=fields["dx"], dy=fields["dy"]).to_action()
@@ -489,6 +529,7 @@ def validate_action(action: object) -> InputAction:
 _SPEC_KINDS: dict[type, str] = {
     PointerClick: "pointer_click",
     PointerMove: "pointer_move",
+    PointerDrag: "pointer_drag",
     Scroll: "scroll",
     TypeText: "type_text",
     PressKey: "press_key",

@@ -34,6 +34,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from collections.abc import Mapping
 
 from app.desktop.input import MAX_TEXT_LENGTH, validate_action
@@ -50,6 +51,11 @@ __all__ = [
 DEFAULT_TIMEOUT_SECONDS = 5.0
 UINPUT_PATH = "/dev/uinput"
 PROVIDER_YDOTOOL = "ydotool"
+POINTER_TOLERANCE_PX = 2
+POINTER_CORRECTION_ROUNDS = 8
+POINTER_SETTLE_SECONDS = 0.25
+POINTER_MAX_STEP_PX = 400
+POINTER_MIN_MEASURABLE_PX = 8
 
 REFUSAL_CODES = frozenset({
     "backend_unavailable",
@@ -58,18 +64,23 @@ REFUSAL_CODES = frozenset({
     "invalid_action",
     "timeout",
     "command_failed",
+    "pointer_not_verified",
 })
 
 # linux/input-event-codes.h codes.  Letters map to their evdev letter key;
 # the same code types lower and upper case depending on Shift.
 _EVDEV_KEYS = {
-    **{chr(ord("a") + offset): 30 + offset for offset in range(26)},
-    **{str(digit): 2 + digit for digit in range(10)},
+    **dict(zip("qwertyuiop", range(16, 26))),
+    **dict(zip("asdfghjkl", range(30, 39))),
+    **dict(zip("zxcvbnm", range(44, 51))),
+    **{str(digit): 1 + digit for digit in range(1, 10)},
+    "0": 11,
     "enter": 28,
     "tab": 15,
     "space": 57,
     "backspace": 14,
     "delete": 111,
+    "insert": 110,
     "escape": 1,
     "left": 105,
     "right": 106,
@@ -84,32 +95,10 @@ _EVDEV_KEYS = {
     "f12": 88,
 }
 _EVDEV_MODIFIERS = {"ctrl": 29, "alt": 56, "shift": 42, "meta": 125}
-_KEY_SYMBOLS = {
-    **{chr(ord("a") + offset): "KEY_" + chr(ord("A") + offset)
-       for offset in range(26)},
-    **{str(digit): "KEY_" + str(digit) for digit in range(10)},
-    "enter": "KEY_ENTER",
-    "tab": "KEY_TAB",
-    "space": "KEY_SPACE",
-    "backspace": "KEY_BACKSPACE",
-    "delete": "KEY_DELETE",
-    "escape": "KEY_ESC",
-    "left": "KEY_LEFT",
-    "right": "KEY_RIGHT",
-    "up": "KEY_UP",
-    "down": "KEY_DOWN",
-    "home": "KEY_HOME",
-    "end": "KEY_END",
-    "pageup": "KEY_PAGEUP",
-    "pagedown": "KEY_PAGEDOWN",
-    **{f"f{number}": f"KEY_F{number}" for number in range(1, 13)},
-}
-_KEY_SYMBOL_MODIFIERS = {
-    "ctrl": "KEY_LEFTCTRL",
-    "alt": "KEY_LEFTALT",
-    "shift": "KEY_LEFTSHIFT",
-    "meta": "KEY_LEFTMETA",
-}
+# ydotool 1.0.4 click codes: 0xC0 = down then up; the low byte picks the button.
+_BUTTON_CODES = {"left": "0xC0", "right": "0xC1", "middle": "0xC2"}
+_LEFT_DOWN = "0x40"
+_LEFT_UP = "0x80"
 
 _MESSAGES = {
     "invalid_action": "Action must be a canonical input action.",
@@ -117,6 +106,7 @@ _MESSAGES = {
     "backend_unavailable": "ydotool is not installed.",
     "uinput_unavailable": "The uinput device is not writable by this user.",
     "timeout": "ydotool timed out.",
+    "pointer_not_verified": "The pointer did not reach the requested position.",
     "command_failed": "ydotool reported an error.",
     "success": "Input action executed.",
 }
@@ -141,17 +131,14 @@ def key_codes(combo):
     return codes
 
 
-def key_symbols(combo):
-    """Return X11-style key names for ``ydotool key`` on ``--key`` mode."""
-    names = []
-    for token in combo.split("+"):
-        if token in _KEY_SYMBOL_MODIFIERS:
-            names.append(_KEY_SYMBOL_MODIFIERS[token])
-        elif token in _KEY_SYMBOLS:
-            names.append(_KEY_SYMBOLS[token])
-        else:  # pragma: no cover - guarded by validate_action
-            raise ValueError("Unknown key token.")
-    return names
+def _clamp_step(value):
+    return round(max(-POINTER_MAX_STEP_PX, min(POINTER_MAX_STEP_PX, value)))
+
+
+def _measured_gain(previous, observed, requested):
+    if abs(requested) < POINTER_MIN_MEASURABLE_PX or observed == 0:
+        return previous
+    return observed / requested
 
 
 def _failure(code, detail=None):
@@ -168,11 +155,9 @@ def _failure(code, detail=None):
 class YdotoolBackend:
     """``InputBackend`` over the ``ydotool`` binary.
 
-    ``which``, ``exists``, ``access``, ``runner`` and ``env`` are injectable so
-    tests never execute ``ydotool``.  ``runner(argv, input=..., timeout=...)``
-    must behave like ``subprocess.run`` (return an object with
-    ``returncode``).  ``env`` defaults to the process environment and is only
-    used to decide the key mode (``--key`` on Wayland/X11 name mode).
+    ``which``, ``exists``, ``access`` and ``runner`` are injectable so tests
+    never execute ``ydotool``.  ``runner(argv, input=..., timeout=...)`` must
+    behave like ``subprocess.run`` (return an object with ``returncode``).
     """
 
     provider = PROVIDER_YDOTOOL
@@ -185,18 +170,16 @@ class YdotoolBackend:
         exists=None,
         access=None,
         runner=None,
-        env=None,
         timeout=DEFAULT_TIMEOUT_SECONDS,
-        symbolic_keys=None,
+        cursor_reader=None,
     ):
         self._binary = binary
         self._which = which or shutil.which
         self._exists = exists or os.path.exists
+        self._cursor_reader = cursor_reader
         self._access = access or os.access
         self._runner = runner or self._default_runner
-        self._env = dict(os.environ if env is None else env)
         self._timeout = float(timeout)
-        self._symbolic = symbolic_keys
 
     # -- discovery ----------------------------------------------------
     def _resolve_binary(self):
@@ -224,15 +207,6 @@ class YdotoolBackend:
             return "uinput_denied"
         return None
 
-    def _symbolic_keys(self):
-        if self._symbolic is not None:
-            return bool(self._symbolic)
-        session = self._env.get("XDG_SESSION_TYPE", "")
-        return (
-            str(session).casefold() == "wayland"
-            or bool(self._env.get("WAYLAND_DISPLAY"))
-        )
-
     def capabilities(self):
         """Return a JSON-safe capability report; performs no input."""
         binary = self._resolve_binary()
@@ -244,8 +218,7 @@ class YdotoolBackend:
             "uinput": UINPUT_PATH,
             "uinput_problem": problem,
             "supported_kinds": ["type_text", "press_key", "pointer_move",
-                                "pointer_click", "scroll"],
-            "key_mode": "symbolic" if self._symbolic_keys() else "codes",
+                                "pointer_click", "pointer_drag", "scroll"],
             "max_text_length": MAX_TEXT_LENGTH,
             "timeout_seconds": self._timeout,
         }
@@ -256,10 +229,24 @@ class YdotoolBackend:
         return [(binary or self._resolve_binary()), "type", "--file", "-"]
 
     def key_argv(self, combo, binary=None):
+        """``ydotool key`` takes ``code:state`` pairs (1 = down, 0 = up).
+
+        Modifiers go down in order, the key is tapped, and modifiers are released
+        in reverse so nothing stays pressed.
+        """
         binary = binary or self._resolve_binary()
-        if self._symbolic_keys():
-            return [binary, "key", *key_symbols(combo)]
-        return [binary, "key", ",".join(str(code) for code in key_codes(combo))]
+        codes = key_codes(combo)
+        *modifiers, key = codes
+        events = [f"{code}:1" for code in modifiers]
+        events += [f"{key}:1", f"{key}:0"]
+        events += [f"{code}:0" for code in reversed(modifiers)]
+        return [binary, "key", *events]
+
+    def _release_keys(self, binary, combo):
+        """Release every key a failed press may have left held down."""
+        codes = key_codes(combo)
+        releases = [f"{code}:0" for code in reversed(codes)]
+        self._exec([binary, "key", *releases])
 
     def move_argv(self, x, y, binary=None):
         """Absolute pointer move: ``ydotool mousemove --absolute -x X -y Y``."""
@@ -274,8 +261,7 @@ class YdotoolBackend:
         count = int(count)
         if count > 1:
             argv += ["--repeat", str(count)]
-        # ydotool accepts the same names as the canonical action ("left").
-        argv.append(str(button))
+        argv.append(_BUTTON_CODES[button])
         return argv
 
     def scroll_argv(self, dx, dy, binary=None):
@@ -324,6 +310,11 @@ class YdotoolBackend:
             cursor_argv = self.move_argv(
                 canonical.fields["x"], canonical.fields["y"]
             )
+        elif canonical.kind == "pointer_drag":
+            return self.drag(
+                (canonical.fields["start_x"], canonical.fields["start_y"]),
+                (canonical.fields["end_x"], canonical.fields["end_y"]),
+            )
         elif canonical.kind == "pointer_click":
             # A click is a move followed by the button press: clicking
             # wherever the cursor happens to be would hit the wrong target.
@@ -352,10 +343,28 @@ class YdotoolBackend:
         if problem is not None:
             return _failure("uinput_unavailable", problem)
 
+        verified = None
         if text is not None:
             failure = self._exec(
                 self.type_argv(binary), text.encode("utf-8")
             )
+        elif canonical.kind in ("pointer_move", "pointer_click"):
+            target = (canonical.fields["x"], canonical.fields["y"])
+            failure = self._exec(self.move_argv(*target))
+            if failure is None:
+                verified = self._verify_pointer(binary, target)
+                if verified is False or (
+                    verified is None and canonical.kind == "pointer_click"
+                ):
+                    return _failure("pointer_not_verified")
+            if failure is None and canonical.kind == "pointer_click":
+                failure = self._exec(
+                    self.click_argv(
+                        canonical.fields.get("button", "left"),
+                        canonical.fields.get("count", 1),
+                        binary=binary,
+                    )
+                )
         elif cursor_argv is not None:
             commands = (
                 cursor_argv if isinstance(cursor_argv, list)
@@ -368,8 +377,63 @@ class YdotoolBackend:
                 if failure is not None:
                     break
         else:
-            failure = self._exec(self.key_argv(canonical.fields["combo"], binary))
+            combo = canonical.fields["combo"]
+            failure = self._exec(self.key_argv(combo, binary))
+            if failure is not None:
+                self._release_keys(binary, combo)
 
         if failure is not None:
             return _failure(failure)
-        return {"success": True, "verified": None, "message": _MESSAGES["success"]}
+        return {"success": True, "verified": verified, "message": _MESSAGES["success"]}
+
+    def drag(self, start, end):
+        """Left-button drag: verified move to ``start``, press, verified move to ``end``, release.
+
+        The button is released on every path after the press, so a failure
+        midway never leaves it held down.
+        """
+        binary = self._resolve_binary()
+        if self._verify_pointer(binary, start) is not True:
+            return _failure("pointer_not_verified")
+        if self._exec([binary, "click", _LEFT_DOWN]) is not None:
+            return _failure("command_failed")
+        try:
+            failure = self._exec(self.move_argv(*end, binary=binary))
+            if failure is None and self._verify_pointer(binary, end) is not True:
+                failure = "pointer_not_verified"
+        finally:
+            self._exec([binary, "click", _LEFT_UP])
+        if failure is not None:
+            return _failure(failure)
+        return {"success": True, "verified": True, "message": _MESSAGES["success"]}
+
+    def _verify_pointer(self, binary, target):
+        """Move until the real cursor is within tolerance of ``target``.
+
+        Returns ``None`` when no cursor reader is configured, so the caller
+        can report that the position was not checked. Otherwise returns
+        ``True`` once within tolerance, or ``False`` after the bounded
+        number of correction rounds.
+        """
+        if self._cursor_reader is None:
+            return None
+        target_x, target_y = target
+        time.sleep(POINTER_SETTLE_SECONDS)
+        x, y = self._cursor_reader()
+        gain_x = gain_y = 1.0
+        for _ in range(POINTER_CORRECTION_ROUNDS):
+            dx, dy = target_x - x, target_y - y
+            if abs(dx) <= POINTER_TOLERANCE_PX and abs(dy) <= POINTER_TOLERANCE_PX:
+                return True
+            step_x = _clamp_step(dx / gain_x)
+            step_y = _clamp_step(dy / gain_y)
+            if self._exec(
+                [binary, "mousemove", "-x", str(step_x), "-y", str(step_y)]
+            ) is not None:
+                return False
+            time.sleep(POINTER_SETTLE_SECONDS)
+            new_x, new_y = self._cursor_reader()
+            gain_x = _measured_gain(gain_x, new_x - x, step_x)
+            gain_y = _measured_gain(gain_y, new_y - y, step_y)
+            x, y = new_x, new_y
+        return abs(target_x - x) <= POINTER_TOLERANCE_PX and abs(target_y - y) <= POINTER_TOLERANCE_PX

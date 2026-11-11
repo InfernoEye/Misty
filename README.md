@@ -203,11 +203,13 @@ Runtime settings are constants and environment variables:
   for approval. `config.toml` records `internet_requires_explicit_request =
   false` — treat that as policy, not as a guarantee: any egress is still
   visible in the audit log and obeys the egress fence.
-- **Consequential actions need approval.** Deleting, overwriting and moving
-  files, closing a window, forgetting a memory and writing the clipboard all
-  wait for a click (`app/engine/confirmations.py`; the static list is
-  `SENSITIVE_TOOLS` in `app/brain/tools.py`). Any egress tool whose payload
-  looks private, or that the classifier cannot judge, is held the same way:
+- **Consequential actions need approval.** Writing, copying, moving and renaming
+  files and folders, closing a window, forgetting a memory, writing the
+  clipboard and every desktop input action wait for a click. The approval
+  rules are declared in the policy table in `app/brain/policy.py`; a tool
+  missing from that table fails closed and always asks. Approval requests are
+  handled by `app/engine/confirmations.py`. (Misty has no file-delete tool.)
+  Any egress tool whose payload looks private, or that the classifier cannot judge, is held the same way:
   URLs and queries carrying credentials, home paths, userinfo, secret-shaped
   tokens, long free text or registered private markers require approval
   (`app/brain/egress.py`). Plain public navigation and public-topic search do
@@ -243,11 +245,13 @@ Runtime settings are constants and environment variables:
   releases it so the vision service and whisper never share memory with it.
   The arbiter refuses to unload a model another live request is using.
 - **Desktop automation** (opt-in, when `ydotool` and `/dev/uinput` are
-  usable): `desktop_move_pointer`, `desktop_click`, `desktop_scroll` and
-  `desktop_type_text` let Misty drive the real desktop. Every one requires
-  approval, coordinates are validated against your actual screens, and a
-  click on a control that completes a purchase or order is refused
-  outright. A multi-step task ("research a good vacuum, open Amazon, search
+  usable): `desktop_move_pointer`, `desktop_click`, `desktop_drag`,
+  `desktop_scroll`, `desktop_type_text` and `desktop_press_key` let Misty drive
+  the real desktop. Every one requires approval, coordinates are validated
+  against your actual screens, and a click on a control that completes a
+  purchase or order is refused outright. Pointer moves are checked against the
+  real cursor position; a click or drag is refused when that position cannot be
+  verified. A multi-step task ("research a good vacuum, open Amazon, search
   for it") runs as a bounded loop: observe the screen → one action →
   observe again, with limits on rounds, time and repeated actions. It stops
   and asks rather than clicking blindly.
