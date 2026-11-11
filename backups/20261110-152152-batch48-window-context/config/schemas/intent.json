@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "properties": {
+    "intent": {
+      "type": "string",
+      "enum": [
+        "open_folder",
+        "open_app",
+        "volume_up",
+        "volume_down",
+        "volume_mute",
+        "get_time",
+        "get_system_status",
+        "unknown"
+      ]
+    },
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "enum": [
+            "~/Downloads",
+            "~/Documents",
+            "~/Desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "requires_confirmation": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "intent",
+    "arguments",
+    "requires_confirmation"
+  ],
+  "additionalProperties": false
+}

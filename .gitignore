@@ -1,0 +1,70 @@
+# Local Python environments and generated caches (including historical snapshots).
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Large model weights and machine-specific installed dependencies.
+/models/
+/data/
+node_modules/
+build/
+dist/
+CMakeFiles/
+CMakeCache.txt
+
+# Runtime output and private local state, including copies inside backups.
+/logs/
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+*.wav
+*.mp3
+*.mp4
+*.webm
+*.gguf
+*.bin
+*.so
+*.o
+*.a
+*.pyc
+*.sock
+*.pid
+# Opaque local archives may contain secrets/runtime history; source is tracked directly.
+*.tgz
+*.tar.gz
+*.tar.xz
+*.zip
+*.7z
+
+# Credentials stay local even in a private GitHub repository.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/config/searxng/settings.yml
+/backups/**/config/searxng/settings.yml
+/.netrc
+
+# Local editor/process scratch state, not project source.
+/.tmpdbg/
+/.last-backup
+/.local_*.log
+*~
+*.swp
+
+# Upstream native source is pinned by Git submodules, not copied build trees.
+# Explicitly indexed gitlinks remain tracked; no local dependency objects ship.
+/third_party/

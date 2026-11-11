@@ -1,0 +1,311 @@
+"""Misty's animated KDE desktop popup."""
+
+import random
+
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (
+    QWidget, QLabel, QVBoxLayout, QHBoxLayout,
+    QFrame, QSizePolicy
+)
+
+
+class MistyPopup(QWidget):
+    STATES = {
+        "ready": ("READY", "#8B95A7"),
+        "listening": ("LISTENING", "#8DA9FF"),
+        "transcribing": ("TRANSCRIBING", "#C4A7FF"),
+        "thinking": ("THINKING", "#C4A7FF"),
+        "acting": ("WORKING", "#F0C674"),
+        "complete": ("COMPLETE", "#8BD5A5"),
+        "error": ("ERROR", "#F28B82"),
+        "confirmation": ("NEEDS CONFIRMATION", "#F0C674"),
+    }
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Misty")
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        self.setFixedWidth(390)
+
+        self._build_ui()
+        self._set_style()
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._animate)
+        self.timer.start(110)
+
+        self.set_state("ready")
+        self.set_transcript("Your commands will appear here.")
+        self.set_response("I'm ready whenever you are.")
+
+    def _build_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(10, 10, 10, 10)
+
+        self.panel = QFrame()
+        self.panel.setObjectName("panel")
+        outer.addWidget(self.panel)
+
+        layout = QVBoxLayout(self.panel)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(15)
+
+        # Header
+        header = QHBoxLayout()
+        header.setSpacing(11)
+
+        self.logo = QLabel("M")
+        self.logo.setObjectName("logo")
+        self.logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.logo.setFixedSize(42, 42)
+
+        title_column = QVBoxLayout()
+        title_column.setSpacing(1)
+
+        title = QLabel("Misty")
+        title.setObjectName("title")
+
+        subtitle = QLabel("YOUR LOCAL DESKTOP ASSISTANT")
+        subtitle.setObjectName("subtitle")
+
+        title_column.addWidget(title)
+        title_column.addWidget(subtitle)
+
+        header.addWidget(self.logo)
+        header.addLayout(title_column)
+        header.addStretch()
+
+        self.status = QLabel()
+        self.status.setObjectName("status")
+        header.addWidget(self.status)
+
+        layout.addLayout(header)
+
+        # Audio visualization
+        visual = QFrame()
+        visual.setObjectName("visual")
+        visual_layout = QVBoxLayout(visual)
+        visual_layout.setContentsMargins(12, 13, 12, 13)
+        visual_layout.setSpacing(7)
+
+        self.state_label = QLabel("READY")
+        self.state_label.setObjectName("stateLabel")
+        self.state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        visual_layout.addWidget(self.state_label)
+
+        bars_layout = QHBoxLayout()
+        bars_layout.setSpacing(5)
+        bars_layout.addStretch()
+
+        self.bars = []
+        for _ in range(17):
+            bar = QFrame()
+            bar.setObjectName("bar")
+            bar.setFixedWidth(5)
+            bar.setFixedHeight(5)
+            self.bars.append(bar)
+            bars_layout.addWidget(bar)
+
+        bars_layout.addStretch()
+        visual_layout.addLayout(bars_layout)
+
+        layout.addWidget(visual)
+
+        # Recognized speech
+        self.transcript_card = self._make_card(
+            "YOU SAID", "transcript"
+        )
+        layout.addWidget(self.transcript_card)
+
+        # Assistant response
+        self.response_card = self._make_card(
+            "MISTY", "response"
+        )
+        layout.addWidget(self.response_card)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(5)
+
+        self.footer_label = QLabel("HOLD F8 TO TALK")
+        self.footer_label.setObjectName("footer")
+
+        hint = QLabel("ESC TO HIDE")
+        hint.setObjectName("footer")
+
+        footer.addWidget(self.footer_label)
+        footer.addStretch()
+        footer.addWidget(hint)
+
+        layout.addLayout(footer)
+
+    def _make_card(self, heading, attribute):
+        card = QFrame()
+        card.setObjectName("messageCard")
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(13, 10, 13, 11)
+        card_layout.setSpacing(5)
+
+        label = QLabel(heading)
+        label.setObjectName("cardHeading")
+
+        content = QLabel()
+        content.setObjectName("cardContent")
+        content.setWordWrap(True)
+        content.setMinimumHeight(24)
+        content.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum
+        )
+
+        card_layout.addWidget(label)
+        card_layout.addWidget(content)
+
+        setattr(self, attribute, content)
+        return card
+
+    def _set_style(self):
+        self.setStyleSheet("""
+            QWidget {
+                color: #E8ECF5;
+                font-family: "Inter", "Noto Sans", sans-serif;
+            }
+
+            QFrame#panel {
+                background-color: #171B29;
+                border: 1px solid #343D55;
+                border-radius: 21px;
+            }
+
+            QLabel#logo {
+                background-color: #34466F;
+                color: #DCE5FF;
+                border: 1px solid #657DB5;
+                border-radius: 14px;
+                font-size: 23px;
+                font-weight: 800;
+            }
+
+            QLabel#title {
+                font-size: 19px;
+                font-weight: 700;
+                color: #F3F5FC;
+            }
+
+            QLabel#subtitle {
+                font-size: 8px;
+                letter-spacing: 1.2px;
+                color: #8994AE;
+                font-weight: 600;
+            }
+
+            QLabel#status {
+                background-color: #293348;
+                color: #AFC2F8;
+                border-radius: 9px;
+                padding: 6px 9px;
+                font-size: 9px;
+                font-weight: 800;
+            }
+
+            QFrame#visual {
+                background-color: #20283A;
+                border: 1px solid #34415C;
+                border-radius: 14px;
+            }
+
+            QLabel#stateLabel {
+                color: #AFC2F8;
+                font-size: 9px;
+                font-weight: 800;
+                letter-spacing: 2px;
+            }
+
+            QFrame#bar {
+                background-color: #8DA9FF;
+                border: none;
+                border-radius: 3px;
+            }
+
+            QFrame#messageCard {
+                background-color: #202536;
+                border: 1px solid #30394F;
+                border-radius: 12px;
+            }
+
+            QLabel#cardHeading {
+                color: #8F9CB9;
+                font-size: 9px;
+                font-weight: 800;
+                letter-spacing: 1.3px;
+            }
+
+            QLabel#cardContent {
+                color: #EDF0F8;
+                font-size: 13px;
+            }
+
+            QLabel#footer {
+                color: #75819B;
+                font-size: 9px;
+                font-weight: 700;
+                letter-spacing: 0.7px;
+            }
+        """)
+
+    def set_state(self, state):
+        if state not in self.STATES:
+            raise ValueError(f"Unknown Misty state: {state}")
+
+        label, color = self.STATES[state]
+
+        self.state = state
+        self.status.setText(label)
+        self.state_label.setText(label)
+        self.status.setStyleSheet(
+            f"background-color: #293348; color: {color}; "
+            "border-radius: 9px; padding: 6px 9px; "
+            "font-size: 9px; font-weight: 800;"
+        )
+        self.state_label.setStyleSheet(
+            f"color: {color}; font-size: 9px; "
+            "font-weight: 800; letter-spacing: 2px;"
+        )
+
+        self._animate()
+
+    def set_transcript(self, text):
+        self.transcript.setText(text)
+
+    def set_response(self, text):
+        self.response.setText(text)
+
+    def show_popup(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _animate(self):
+        active = self.state in ("listening", "transcribing", "thinking", "acting")
+
+        for bar in self.bars:
+            if active:
+                height = random.randint(7, 30)
+            else:
+                height = random.randint(4, 9)
+
+            bar.setFixedHeight(height)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.hide()
+            return
+
+        super().keyPressEvent(event)

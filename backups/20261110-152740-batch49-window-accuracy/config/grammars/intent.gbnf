@@ -1,0 +1,14 @@
+root ::= "{" ws "\"intent\"" ws ":" ws intent ws "," ws "\"arguments\"" ws ":" ws arguments ws "," ws "\"requires_confirmation\"" ws ":" ws boolean ws "}"
+
+intent ::= "\"open_folder\"" | "\"open_app\"" | "\"volume_up\"" | "\"volume_down\"" | "\"volume_mute\"" | "\"get_time\"" | "\"get_system_status\"" | "\"unknown\""
+
+arguments ::= "{}" | "{" ws folder-kv ws "}" | "{" ws app-kv ws "}"
+
+folder-kv ::= "\"folder\"" ws ":" ws folder
+app-kv ::= "\"app\"" ws ":" ws app
+
+folder ::= "\"Downloads\"" | "\"Documents\"" | "\"Desktop\""
+app ::= "\"firefox\"" | "\"helium\"" | "\"dolphin\"" | "\"terminal\""
+
+boolean ::= "true" | "false"
+ws ::= [ \t\n]*

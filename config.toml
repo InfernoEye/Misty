@@ -1,0 +1,36 @@
+[assistant]
+name = "Misty"
+personality = "natural_friendly"
+
+[activation]
+mode = "hold"
+# The active shortcut is stored in config/shortcut.json and managed by
+# Settings -> Voice. MISTY_SHORTCUT is passed to the KDE helper.
+
+[speech]
+languages = ["en", "pl"]
+# The microphone device is stored in config/audio.json.
+sample_rate = 16000
+
+[feedback]
+# Local TTS is not implemented yet.
+voice_enabled = false
+visual_enabled = true
+response_language = "auto"
+
+[privacy]
+local_processing = true
+# Public web research is automatic; private files, clipboard, and screen
+# captures are never uploaded.
+internet_requires_explicit_request = false
+record_only_while_activated = true
+unload_model_after_session = true
+
+[decision]
+model = "Qwen3-4B-Q4_K_M"
+backend = "llama.cpp"
+gpu_backend = "vulkan"
+confidence_threshold = 0.60
+# Advanced overrides: MISTY_MODEL_PATH, MISTY_LLAMA_SERVER,
+# MISTY_LLAMA_HOST, MISTY_LLAMA_PORT, MISTY_LLAMA_GPU_LAYERS,
+# MISTY_LLAMA_CONTEXT, MISTY_MIN_CONFIDENCE.

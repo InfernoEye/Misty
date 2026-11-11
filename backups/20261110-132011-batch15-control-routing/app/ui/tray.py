@@ -1,0 +1,97 @@
+from PySide6.QtCore import Qt
+from PySide6.QtGui import (
+    QAction, QColor, QIcon, QPainter, QPen, QPixmap, QFont,
+)
+from PySide6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
+
+
+def make_misty_icon():
+    pixmap = QPixmap(64, 64)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor("#718DCE"), 2))
+    painter.setBrush(QColor("#263653"))
+    painter.drawRoundedRect(3, 3, 58, 58, 19, 19)
+    painter.setPen(QColor("#E5ECFF"))
+    painter.setFont(QFont("Inter", 34, QFont.Weight.Bold))
+    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "M")
+    painter.end()
+
+    return QIcon(pixmap)
+
+
+class MistyTray:
+    def __init__(self, app, main_window):
+        self.app = app
+        self.main_window = main_window
+
+        self.tray = QSystemTrayIcon(make_misty_icon(), app)
+        self.tray.setToolTip("Misty — local desktop assistant")
+
+        self.menu = QMenu()
+
+        ask_action = QAction("Ask Misty…", self.menu)
+        ask_action.triggered.connect(self.main_window.prompt_for_text)
+        self.menu.addAction(ask_action)
+
+        self.menu.addSeparator()
+
+        open_action = QAction("Open Misty", self.menu)
+        open_action.triggered.connect(self.show_main_window)
+        self.menu.addAction(open_action)
+
+        self.menu.addSeparator()
+
+        about_action = QAction("About Misty", self.menu)
+        about_action.triggered.connect(self.show_about)
+        self.menu.addAction(about_action)
+
+        self.menu.addSeparator()
+
+        quit_action = QAction("Quit Misty", self.menu)
+        quit_action.triggered.connect(self.app.quit)
+        self.menu.addAction(quit_action)
+
+        self.tray.setContextMenu(self.menu)
+        self.tray.activated.connect(self.on_activated)
+        self.tray.show()
+
+    def on_activated(self, reason):
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            if self.main_window.isVisible():
+                self.main_window.hide()
+            else:
+                self.show_main_window()
+
+    def show_main_window(self):
+        window = self.main_window
+        window.showNormal()
+        window.resize(1120, 740)
+
+        screen = self.app.primaryScreen()
+        if screen is not None:
+            area = screen.availableGeometry()
+            x = area.x() + (area.width() - window.width()) // 2
+            y = area.y() + (area.height() - window.height()) // 2
+            window.move(x, y)
+
+        window.raise_()
+        window.activateWindow()
+
+    def show_about(self):
+        QMessageBox.about(
+            self.main_window,
+            "About Misty",
+            "<h2>Misty</h2>"
+            "<p>Your local-first KDE desktop assistant.</p>"
+            "<p>Speech recognition, AI reasoning and desktop control run "
+            "locally. Internet tools are available when useful.</p>",
+        )
+
+    def shutdown(self):
+        self.tray.hide()

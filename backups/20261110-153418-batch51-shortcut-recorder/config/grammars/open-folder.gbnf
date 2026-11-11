@@ -1,0 +1,3 @@
+root ::= "{" ws "\"intent\"" ws ":" ws "\"open_folder\"" ws "," ws "\"folder\"" ws ":" ws "\"Downloads\"" ws "," ws "\"requires_confirmation\"" ws ":" ws boolean ws "}"
+boolean ::= "true" | "false"
+ws ::= [ \t\n]*

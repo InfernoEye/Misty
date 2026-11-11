@@ -1,0 +1,72 @@
+# Misty -- non-pip system requirements (audit finding F6).
+#
+# Plain comments only: this file is documentation, not input to any package
+# manager. Observed on Arch Linux on the 2026-11-10 verification run; package
+# names below are the Arch ones (Debian/Ubuntu names in parentheses where they
+# differ). `.venv/bin/python -B scripts/check_deps.py` verifies which of these
+# executables are actually present and where.
+#
+# python3.14
+#   Interpreter .venv was created from (.venv/pyvenv.cfg records 3.14.9; the
+#   current interpreter is 3.14.10). PySide6 6.12.0 requires >=3.10,<3.16.
+
+# --- Qt6 / KF6: builds kde-shortcut/build/misty-shortcut (hold-to-talk helper)
+# qt6-base            Qt6 Core and Gui, qmake6, qdbus6
+#                     (Ubuntu: qt6-base-dev)
+# kf6-kglobalaccel    KF6GlobalAccel: system-wide F8 hotkey registration
+#                     (Ubuntu: libkf6globalaccel-dev)
+# cmake >= 3.20       kde-shortcut/CMakeLists.txt requires it
+# g++ (build-essential), make, optionally ninja
+# The helper is launched by app/engine/voice_controller.py (HELPER) and by
+# launcher.py; without it Misty has no keyboard activation at all.
+
+# --- Audio/video and documents
+# ffmpeg              decode audio/video to PCM for file transcription;
+#                     whisper-cli (app/speech/file_transcriber.py) only reads WAV
+# poppler-utils       pdftotext -- PDF text extraction (app/documents/converters.py)
+# pandoc              document conversion (app/documents/converters.py)
+# tesseract           OCR of screenshots (app/desktop/vision/ocr.py hardcodes
+#                     /usr/bin/tesseract); expects eng+pol traineddata
+#                     (tesseract-data-eng, tesseract-data-pol)
+# ocrmypdf            OCR fallback for image-only PDFs (app/documents/ocr_pdf.py).
+#                     NOT a system package here: installed with pipx into
+#                     data/pipx/venvs/ocrmypdf and exposed as
+#                     data/bin/ocrmypdf, which the app prefers over PATH.
+# ripgrep (rg)        bounded text/file search (app/actions/text_search.py)
+
+# --- Wayland / X11 desktop integration
+# wl-clipboard        wl-copy / wl-paste -- clipboard tools (app/engine/clipboard_bridge.py)
+# ydotool             injected keyboard input for desktop actions. Requires the
+#                     `input` group membership AND a readable+writable
+#                     /dev/uinput plus the ydotool user daemon; without those
+#                     the binary exists but typing silently fails.
+# xdotool             X11 window/input fallback
+# kwin package        kwin_wayland for KWin screen-capture scripting
+#                     (app/desktop/vision/kwin_capture.py)
+# pipewire            wpctl: volume control (app/actions/executor.py)
+#                     gtk-launch, xdg-open, xdg-user-dir: app launch and XDG
+#                     folder names; all optional, shipped with a KDE install.
+
+# --- Build tools for the vendored C/C++ components
+# git                 third_party/llama.cpp and third_party/whisper.cpp are git
+#                     checkouts; `git` is needed to fetch them at the pinned
+#                     commits (see MANIFEST.lock).
+# cmake, g++, make    llama.cpp and whisper.cpp builds; llama.cpp needs a
+#                     Vulkan-capable toolchain for the GPU backend.
+# vulkan-icd-loader, vulkan-headers, vulkan-tools
+#   Vulkan loader + headers; llama.cpp is built with GGML_VULKAN=ON and
+#   llama-server/llama-mtmd-cli use the Vulkan backend (-ngl 99).
+# vulkan-radeon (AMD) or nvidia-utils (NVIDIA)
+#   The actual ICD driver. Without it libggml-vulkan.so fails to initialise or
+#   runs on CPU, which is far too slow for the 4B/8B models.
+
+# --- Search backend (not a package dependency)
+# searxng             runs as a system service, not from this project, with
+#                     config/searxng/settings.yml. On the verification run the
+#                     instance listened on 127.0.0.1:8888 (settings.yml
+#                     server.port) while Misty's default MISTY_SEARXNG_URL is
+#                     http://127.0.0.1:8080 -- set MISTY_SEARXNG_URL to match.
+
+# --- Not covered by this file
+# Playwright Chromium is a pip-installed browser bundle under
+# data/playwright-browsers (not a system package); MANIFEST.lock records it.

@@ -1,0 +1,73 @@
+#include <QAction>
+#include <QGuiApplication>
+#include <QKeySequence>
+#include <QString>
+#include <QTextStream>
+
+#include <KGlobalAccel>
+
+int main(int argc, char *argv[])
+{
+    QGuiApplication app(argc, argv);
+
+    QCoreApplication::setApplicationName("Misty");
+    QCoreApplication::setOrganizationName("Misty");
+
+    QAction holdToTalk;
+
+    holdToTalk.setObjectName("holdToTalk");
+    holdToTalk.setText("Hold to talk");
+    holdToTalk.setAutoRepeat(false);
+
+    auto *globalAccel = KGlobalAccel::self();
+
+    QString shortcutText = qEnvironmentVariable("MISTY_SHORTCUT");
+    if (argc > 1 && argv[1] != nullptr && argv[1][0] != '\0') {
+        shortcutText = QString::fromUtf8(argv[1]);
+    }
+    shortcutText = shortcutText.trimmed();
+    if (shortcutText.isEmpty()) {
+        shortcutText = QStringLiteral("F8");
+    }
+
+    QKeySequence configuredShortcut(shortcutText);
+    if (configuredShortcut.isEmpty()) {
+        QTextStream(stderr)
+            << "Invalid Misty shortcut, falling back to F8: "
+            << shortcutText << "\n";
+        shortcutText = QStringLiteral("F8");
+        configuredShortcut = QKeySequence(shortcutText);
+    }
+
+    const QList<QKeySequence> defaultKeys{configuredShortcut};
+
+    if (!globalAccel->setDefaultShortcut(&holdToTalk, defaultKeys)) {
+        QTextStream(stderr) << "Could not register Misty's default shortcut.\n";
+        return 1;
+    }
+
+    if (!globalAccel->setShortcut(&holdToTalk, defaultKeys)) {
+        QTextStream(stderr) << "Could not register Misty's shortcut.\n";
+        return 1;
+    }
+
+    QObject::connect(
+        globalAccel,
+        &KGlobalAccel::globalShortcutActiveChanged,
+        &app,
+        [&holdToTalk](QAction *action, bool active) {
+            if (action != &holdToTalk)
+                return;
+
+            QTextStream output(stdout);
+            output << (active ? "PRESS\n" : "RELEASE\n");
+            output.flush();
+        }
+    );
+
+    QTextStream(stdout)
+        << "Misty shortcut helper ready (" << shortcutText << ").\n";
+    QTextStream(stdout).flush();
+
+    return app.exec();
+}

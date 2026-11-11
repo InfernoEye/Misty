@@ -1,0 +1,269 @@
+import subprocess
+import time
+import threading
+import json
+import sys
+from pathlib import Path
+
+from app.speech.recorder import Recorder
+from app.speech.transcriber import Transcriber
+from app.brain.agent import MistyAgent
+
+
+ROOT = Path(__file__).resolve().parent
+HELPER = ROOT / "kde-shortcut" / "build" / "misty-shortcut"
+
+
+def main():
+    if not HELPER.is_file():
+        print("[Misty] KDE shortcut helper not found.", flush=True)
+        return
+
+    recorder = Recorder()
+    process = None
+    ui_process = None
+
+    def notify(state=None, transcript=None, response=None, show=False):
+        if ui_process is None or ui_process.poll() is not None:
+            return
+        message = {}
+        if state is not None:
+            message["state"] = state
+        if transcript is not None:
+            message["transcript"] = transcript
+        if response is not None:
+            message["response"] = response
+        if show:
+            message["show"] = True
+        try:
+            ui_process.stdin.write(json.dumps(message) + chr(10))
+            ui_process.stdin.flush()
+        except (BrokenPipeError, OSError):
+            print("[Misty] UI connection lost.", flush=True)
+
+
+    transcriber = None
+    whisper_thread = None
+
+    agent = None
+    agent_thread = None
+    agent_start_errors = []
+
+    is_recording = False
+
+    def preload_agent():
+        try:
+            agent.start()
+        except Exception as error:
+            agent_start_errors.append(error)
+            print(f"[Misty] Qwen preload error: {error}", flush=True)
+
+    try:
+        print("[Misty] Starting desktop interface...", flush=True)
+        ui_process = subprocess.Popen(
+            [sys.executable, str(ROOT / "popup_preview.py"), "--service"],
+            stdin=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        time.sleep(0.3)
+        notify(state="ready")
+
+        print("[Misty] Preparing microphone...", flush=True)
+        recorder.prepare()
+
+        print("[Misty] Starting shortcut listener.", flush=True)
+
+        process = subprocess.Popen(
+            [str(HELPER)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        for line in process.stdout:
+            event = line.strip()
+
+            if event == "PRESS":
+                if is_recording:
+                    continue
+
+                print("[Misty] Shortcut pressed.", flush=True)
+                notify(state="listening", show=True)
+
+                transcriber = Transcriber()
+                whisper_thread = threading.Thread(
+                    target=transcriber.load,
+                    daemon=True,
+                )
+                whisper_thread.start()
+
+                agent = MistyAgent()
+                agent_start_errors.clear()
+
+                # Load Qwen while the user is speaking.
+                agent_thread = threading.Thread(
+                    target=preload_agent,
+                    daemon=True,
+                )
+                agent_thread.start()
+
+                try:
+                    recorder.start()
+                    is_recording = True
+                except Exception as error:
+                    print(
+                        f"[Misty] Recording start error: {error}",
+                        flush=True,
+                    )
+
+                    whisper_thread.join()
+                    agent_thread.join()
+
+                    if agent.process is not None:
+                        agent.stop()
+
+                    transcriber = None
+                    whisper_thread = None
+                    agent = None
+                    agent_thread = None
+
+            elif event == "RELEASE":
+                if not is_recording:
+                    continue
+
+                print("[Misty] Shortcut released.", flush=True)
+                notify(state="transcribing")
+
+                try:
+                    audio = recorder.stop()
+                    is_recording = False
+
+                    if audio is None:
+                        print("[Misty] No audio captured.", flush=True)
+                        continue
+
+                    if whisper_thread is not None:
+                        whisper_thread.join()
+
+                    started = time.perf_counter()
+                    result = transcriber.transcribe(audio)
+                    transcription_time = time.perf_counter() - started
+
+                    transcript = result["text"].strip()
+
+                    print()
+                    print("========== MISTY TRANSCRIPTION ==========")
+                    print(f"Text: {transcript}")
+                    print(f"Language: {result['language'] or 'unknown'}")
+
+                    confidence = result.get("language_probability")
+                    if confidence is not None:
+                        print(f"Language confidence: {confidence:.2f}")
+
+                    print(
+                        f"Transcription time: {transcription_time:.2f} seconds"
+                    )
+                    print("==========================================", flush=True)
+
+                    if not transcript:
+                        print("[Misty] I didn't catch that.", flush=True)
+                        continue
+
+                    # Wait for the background Qwen startup to finish.
+                    if agent_thread is not None:
+                        agent_thread.join()
+
+                    if agent_start_errors:
+                        print(
+                            "[Misty] Qwen preload failed; "
+                            "the agent will attempt a normal startup.",
+                            flush=True,
+                        )
+
+                    notify(
+                        state="thinking",
+                        transcript=transcript,
+                        response="Working out what you need...",
+                    )
+                    print("[Misty] Thinking...", flush=True)
+
+                    agent_started = time.perf_counter()
+                    answer = agent.run(transcript)
+                    agent_time = time.perf_counter() - agent_started
+
+                    print()
+                    print("========== MISTY RESPONSE ==========")
+                    print(answer)
+                    notify(state='complete', response=answer)
+                    print(f"Agent time: {agent_time:.2f} seconds")
+                    print("====================================", flush=True)
+                    print()
+
+                except Exception as error:
+                    print(
+                        f"[Misty] Request processing error: {error}",
+                        flush=True,
+                    )
+
+                finally:
+                    if whisper_thread is not None:
+                        whisper_thread.join()
+
+                    if transcriber is not None:
+                        transcriber.unload()
+
+                    # Also clean up Qwen if transcription failed before
+                    # agent.run() had a chance to stop it.
+                    if agent_thread is not None:
+                        agent_thread.join()
+
+                    if agent is not None and agent.process is not None:
+                        agent.stop()
+
+                    transcriber = None
+                    whisper_thread = None
+                    agent = None
+                    agent_thread = None
+
+            elif event:
+                print(f"[Misty] {event}", flush=True)
+
+    except KeyboardInterrupt:
+        print("\n[Misty] Shutting down.", flush=True)
+
+    finally:
+        if is_recording:
+            try:
+                recorder.stop()
+            except Exception:
+                pass
+
+        if whisper_thread is not None:
+            whisper_thread.join()
+
+        if agent_thread is not None:
+            agent_thread.join()
+
+        if transcriber is not None:
+            transcriber.unload()
+
+        if agent is not None and agent.process is not None:
+            agent.stop()
+
+        recorder.close()
+
+        if process is not None:
+            process.terminate()
+            process.wait()
+
+        if ui_process is not None and ui_process.poll() is None:
+            ui_process.terminate()
+            ui_process.wait()
+
+        print("[Misty] Shutdown complete.", flush=True)
+
+
+if __name__ == "__main__":
+    main()

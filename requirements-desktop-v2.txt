@@ -1,0 +1,5 @@
+# Optional gated Desktop Agent v2 dependencies; install into Misty's .venv only.
+# Mirrors the reviewed DSH Next Cua native provider version. Do not auto-upgrade:
+# newer versions require catalog/platform/policy acceptance again.
+cua-driver==0.28.0
+jsonschema==4.26.0

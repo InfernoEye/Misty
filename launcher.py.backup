@@ -1,0 +1,155 @@
+import subprocess
+import sys
+import time
+import threading
+
+from pathlib import Path
+
+from app.speech.recorder import Recorder
+from app.speech.transcriber import Transcriber
+from app.brain.intent_parser import parse_intent
+from app.actions.executor import ActionExecutor
+
+ROOT = Path(__file__).resolve().parent
+HELPER = ROOT / "kde-shortcut" / "build" / "misty-shortcut"
+
+
+def main():
+    if not HELPER.exists():
+        print("[Misty] KDE shortcut helper not found.")
+        return
+
+    recorder = Recorder()
+    executor = ActionExecutor()
+    process = None
+
+    transcriber = None
+    model_thread = None
+    is_recording = False
+
+    try:
+        print("[Misty] Preparing microphone...")
+        recorder.prepare()
+
+        print("[Misty] Starting shortcut listener.")
+
+        process = subprocess.Popen(
+            [str(HELPER)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        for line in process.stdout:
+            event = line.strip()
+
+            if event == "PRESS":
+                if is_recording:
+                    continue
+
+                print("[Misty] Shortcut pressed.", flush=True)
+
+                transcriber = Transcriber()
+                model_thread = threading.Thread(
+                    target=transcriber.load,
+                    daemon=True,
+                )
+                model_thread.start()
+
+                try:
+                    recorder.start()
+                    is_recording = True
+                except Exception as error:
+                    print(f"[Misty] Recording start error: {error}", flush=True)
+                    continue
+
+            elif event == "RELEASE":
+                if not is_recording:
+                    continue
+
+                print("[Misty] Shortcut released.", flush=True)
+
+                try:
+                    audio = recorder.stop()
+                    is_recording = False
+
+                    if audio is None:
+                        continue
+
+                    print("[Misty] Preparing transcription engine...", flush=True)
+                    model_thread.join()
+
+                    print("[Misty] Transcribing...", flush=True)
+                    started = time.perf_counter()
+
+                    result = transcriber.transcribe(audio)
+
+                    elapsed = time.perf_counter() - started
+
+                    print("\n========== MISTY TRANSCRIPTION ==========")
+                    print(f"Text: {result['text']}")
+                    print(f"Language: {result['language'] or 'unknown'}")
+                    confidence = result.get("language_probability")
+                    if confidence is not None:
+                        print(f"Language confidence: {confidence:.2f}")
+                    print(f"Transcription time: {elapsed:.2f} seconds")
+                    print("==========================================", flush=True)
+
+                    parsed = parse_intent(result["text"])
+                    print(f"[Misty] Parsed intent: {parsed}", flush=True)
+
+                    action_result = executor.execute(parsed)
+
+                    if action_result["success"]:
+                        print(
+                            f"[Misty] {action_result['message']}",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"[Misty] Action not performed: "
+                            f"{action_result['message']}",
+                            flush=True,
+                        )
+
+                    print("", flush=True)
+
+                except Exception as error:
+                    print(f"[Misty] Transcription error: {error}", flush=True)
+
+                finally:
+                    if transcriber is not None:
+                        transcriber.unload()
+
+                    transcriber = None
+                    model_thread = None
+
+            elif event:
+                print(f"[Misty] {event}", flush=True)
+
+    except KeyboardInterrupt:
+        print("\n[Misty] Shutting down.", flush=True)
+
+    finally:
+        if is_recording:
+            try:
+                recorder.stop()
+            except Exception:
+                pass
+
+        if model_thread is not None:
+            model_thread.join()
+
+        if transcriber is not None:
+            transcriber.unload()
+
+        recorder.close()
+
+        if process is not None:
+            process.terminate()
+            process.wait()
+
+
+if __name__ == "__main__":
+    main()

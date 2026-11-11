@@ -1,0 +1,33 @@
+# Misty -- Python dependency pins for the GUI/engine path (audit finding F6).
+#
+# Exact versions observed on the 2026-11-10 verification run with
+#   .venv/bin/python -B  (importlib.metadata, no network, no pip install)
+# The list is not `pip freeze`: it contains only the distributions that the
+# application actually imports, found by an AST scan of app/**, misty.py,
+# launcher.py, popup_preview.py, settings_gui.py and session.py. Non-stdlib
+# top-level modules found: PySide6, numpy, sounddevice, PIL, dbus, dbus_next,
+# gi, bs4, playwright, psutil. Transitive dependencies (soupsieve, cffi,
+# greenlet, pyee, ...) are not pinned here; MANIFEST.lock records the full
+# installed set plus a hash of it.
+#
+# CAVEAT: .venv was created with include-system-site-packages = true, so most
+# pins below are satisfied by distro packages in /usr/lib/python3.14/
+# site-packages, not by anything inside .venv. Only numpy, sounddevice and
+# playwright currently live in .venv; the rest are inherited.
+#
+# PyGObject is pinned because app/desktop/accessibility/service.py imports
+# `gi` for AT-SPI. On the verification run `import gi` succeeds (3.58.1), but
+# the accessibility service degrades to unavailable if the gi namespace or the
+# AT-SPI D-Bus session bus is missing; scripts/check_deps.py only checks the
+# import, not the live bus.
+
+PySide6==6.12.0
+numpy==2.5.4
+sounddevice==0.5.6
+Pillow==13.0.0
+dbus-python==1.5.1
+dbus_next==0.2.3
+PyGObject==3.58.1
+beautifulsoup4==4.15.0
+playwright==1.65.0
+psutil==7.2.2

@@ -1,0 +1,390 @@
+{
+  "config_files": [
+    {
+      "active": true,
+      "path": "config/shortcut.json",
+      "role": "hold-to-talk shortcut"
+    },
+    {
+      "active": true,
+      "path": "config/audio.json",
+      "role": "microphone device"
+    },
+    {
+      "active": true,
+      "path": "config/searxng/settings.yml",
+      "role": "SearXNG instance"
+    },
+    {
+      "active": false,
+      "path": "config.toml",
+      "role": "descriptive only; runtime values come from constants and env vars"
+    }
+  ],
+  "external_services": [
+    {
+      "kind": "system service (systemd, outside this project)",
+      "listening": "the live instance answers on 127.0.0.1:8888 (settings.yml server.port); Misty's default MISTY_SEARXNG_URL is http://127.0.0.1:8080",
+      "name": "searxng",
+      "settings_path": "config/searxng/settings.yml"
+    },
+    {
+      "kind": "pipx venv inside the project",
+      "launcher": "data/bin/ocrmypdf",
+      "name": "ocrmypdf",
+      "venv_path": "data/pipx/venvs/ocrmypdf"
+    }
+  ],
+  "generated_by": "scripts/check_deps.py --write-lock",
+  "models": [
+    {
+      "component": "reasoning",
+      "mtime_utc": "2026-11-09T14:44:10Z",
+      "path": "models/Qwen3-4B-Q4_K_M.gguf",
+      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+      "sha256_status": "computed",
+      "size_bytes": 2497280256
+    },
+    {
+      "component": "speech",
+      "mtime_utc": "2026-11-09T14:26:40Z",
+      "path": "models/ggml-large-v3-turbo-q5_0.bin",
+      "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+      "sha256_status": "computed",
+      "size_bytes": 574041195
+    },
+    {
+      "component": "vision",
+      "mtime_utc": "2026-11-10T09:44:16Z",
+      "path": "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+      "sha256": "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
+      "sha256_status": "computed",
+      "size_bytes": 5027784800
+    },
+    {
+      "component": "vision projector",
+      "mtime_utc": "2026-11-10T09:43:41Z",
+      "path": "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf",
+      "sha256": "c6ba85508d82f42590e6eb77d5340369ab6fecf107a7561d809523d8aa5f3bfd",
+      "sha256_status": "computed",
+      "size_bytes": 752289728
+    }
+  ],
+  "native_executables": [
+    {
+      "command": "cmake",
+      "path": "/usr/bin/cmake",
+      "purpose": "builds kde-shortcut, llama.cpp, whisper.cpp",
+      "required": true,
+      "version": "cmake version 4.4.5"
+    },
+    {
+      "command": "ffmpeg",
+      "path": "/usr/bin/ffmpeg",
+      "purpose": "audio/video decoding for file transcription and whisper",
+      "required": true,
+      "version": "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers"
+    },
+    {
+      "command": "g++",
+      "path": "/usr/bin/g++",
+      "purpose": "C++ compiler for the native builds",
+      "required": true,
+      "version": "g++ (GCC) 16.2.1 20260810"
+    },
+    {
+      "command": "git",
+      "path": "/usr/bin/git",
+      "purpose": "vendored llama.cpp/whisper.cpp checkouts",
+      "required": true,
+      "version": "git version 2.56.0"
+    },
+    {
+      "command": "gtk-launch",
+      "path": "/usr/bin/gtk-launch",
+      "purpose": "launching allowlisted .desktop applications",
+      "required": false,
+      "version": "gtk3 1:3.24.52-2 (pacman)"
+    },
+    {
+      "command": "kwin_wayland",
+      "path": "/usr/bin/kwin_wayland",
+      "purpose": "KDE screen capture scripting (desktop sessions only)",
+      "required": false,
+      "version": "kwin 6.8.2-2 (pacman)"
+    },
+    {
+      "command": "ninja",
+      "path": "/usr/bin/ninja",
+      "purpose": "faster CMake generator (optional)",
+      "required": false,
+      "version": "1.13.2"
+    },
+    {
+      "command": "pandoc",
+      "path": "/usr/bin/pandoc",
+      "purpose": "document conversion",
+      "required": true,
+      "version": "pandoc 3.11"
+    },
+    {
+      "command": "pdftotext",
+      "path": "/usr/bin/pdftotext",
+      "purpose": "PDF text extraction (poppler-utils)",
+      "required": true,
+      "version": "poppler 26.10.0-2 (pacman)"
+    },
+    {
+      "command": "qdbus6",
+      "path": "/usr/bin/qdbus6",
+      "purpose": "KWin window enumeration over D-Bus",
+      "required": true,
+      "version": "qt6-tools 6.12.0-1 (pacman)"
+    },
+    {
+      "command": "rg",
+      "path": "/usr/bin/rg",
+      "purpose": "bounded text search (ripgrep)",
+      "required": true,
+      "version": "ripgrep 15.2.0"
+    },
+    {
+      "command": "tesseract",
+      "path": "/usr/bin/tesseract",
+      "purpose": "OCR of screenshots and scanned PDFs",
+      "required": true,
+      "version": "tesseract 5.5.4"
+    },
+    {
+      "command": "wl-copy",
+      "path": "/usr/bin/wl-copy",
+      "purpose": "Wayland clipboard copy",
+      "required": true,
+      "version": "wl-clipboard 2.3.0"
+    },
+    {
+      "command": "wl-paste",
+      "path": "/usr/bin/wl-paste",
+      "purpose": "Wayland clipboard read",
+      "required": true,
+      "version": "wl-clipboard 2.3.0"
+    },
+    {
+      "command": "wpctl",
+      "path": "/usr/bin/wpctl",
+      "purpose": "volume control via PipeWire",
+      "required": false,
+      "version": "wireplumber 0.5.19-1 (pacman)"
+    },
+    {
+      "command": "xdg-open",
+      "path": "/usr/bin/xdg-open",
+      "purpose": "opening folders/URLs in the desktop",
+      "required": false,
+      "version": "xdg-utils 1.2.1-2 (pacman)"
+    },
+    {
+      "command": "xdg-user-dir",
+      "path": "/usr/bin/xdg-user-dir",
+      "purpose": "resolving XDG user folders (Downloads etc.)",
+      "required": false,
+      "version": "xdg-user-dirs 0.20-1 (pacman)"
+    },
+    {
+      "command": "xdotool",
+      "path": "/usr/bin/xdotool",
+      "purpose": "X11 window/input fallback",
+      "required": true,
+      "version": "xdotool version 4.20260303.1"
+    },
+    {
+      "command": "ydotool",
+      "path": "/usr/bin/ydotool",
+      "purpose": "injected uinput keyboard input for desktop actions",
+      "required": true,
+      "version": "ydotool 1.0.4-3 (pacman)"
+    }
+  ],
+  "python": {
+    "current": "3.14.10",
+    "implementation": "CPython",
+    "include_system_site_packages": true,
+    "pyvenv_command": "/usr/bin/python -m venv /home/forgottensin/misty/.venv",
+    "pyvenv_executable": "/usr/bin/python3.14",
+    "pyvenv_version": "3.14.9",
+    "system_site_packages": "/usr/lib/python3.14/site-packages",
+    "venv_site_packages": ".venv/lib/python3.14/site-packages"
+  },
+  "python_distributions": [
+    {
+      "name": "beautifulsoup4",
+      "role": "HTML parsing for documents and web fetch",
+      "source": "system",
+      "version": "4.15.0"
+    },
+    {
+      "name": "cffi",
+      "role": "sounddevice backend",
+      "source": "venv+system",
+      "version": "2.1.1"
+    },
+    {
+      "name": "dbus-next",
+      "role": "async D-Bus KWin window scripting",
+      "source": "system",
+      "version": "0.2.3"
+    },
+    {
+      "name": "dbus-python",
+      "role": "D-Bus (media, KWin capture)",
+      "source": "system",
+      "version": "1.5.1"
+    },
+    {
+      "name": "numpy",
+      "role": "audio buffers (recorder, transcriber)",
+      "source": "venv+system",
+      "version": "2.5.4"
+    },
+    {
+      "name": "Pillow",
+      "role": "screenshots, OCR and VLM image preparation",
+      "source": "system",
+      "version": "13.0.0"
+    },
+    {
+      "name": "playwright",
+      "role": "browser automation with bundled Chromium",
+      "source": "venv",
+      "version": "1.65.0"
+    },
+    {
+      "name": "psutil",
+      "role": "system telemetry",
+      "source": "system",
+      "version": "7.2.2"
+    },
+    {
+      "name": "pycparser",
+      "role": "cffi dependency",
+      "source": "venv+system",
+      "version": "3.12"
+    },
+    {
+      "name": "PyGObject",
+      "role": "AT-SPI accessibility (gi)",
+      "source": "system",
+      "version": "3.58.1"
+    },
+    {
+      "name": "PySide6",
+      "role": "Qt6 widgets, IPC, tray",
+      "source": "system",
+      "version": "6.12.0"
+    },
+    {
+      "name": "shiboken6",
+      "role": "PySide6 binding runtime",
+      "source": "system",
+      "version": "6.12.0"
+    },
+    {
+      "name": "sounddevice",
+      "role": "microphone capture (PortAudio cffi)",
+      "source": "venv",
+      "version": "0.5.6"
+    },
+    {
+      "name": "soupsieve",
+      "role": "beautifulsoup4 selector dependency",
+      "source": "system",
+      "version": "3.0.4"
+    }
+  ],
+  "python_distributions_summary": {
+    "full_list_sha256": "717d41bdbbf7f305ed3ac0a43ba8520f81565f1f092475e8667c9c3f8d12857e",
+    "system_distributions": 225,
+    "total_distributions": 239,
+    "total_unique_names": 234,
+    "venv_distributions": 14
+  },
+  "requirements_pins": [
+    {
+      "name": "PySide6",
+      "version": "6.12.0"
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.4"
+    },
+    {
+      "name": "sounddevice",
+      "version": "0.5.6"
+    },
+    {
+      "name": "Pillow",
+      "version": "13.0.0"
+    },
+    {
+      "name": "dbus-python",
+      "version": "1.5.1"
+    },
+    {
+      "name": "dbus_next",
+      "version": "0.2.3"
+    },
+    {
+      "name": "PyGObject",
+      "version": "3.58.1"
+    },
+    {
+      "name": "beautifulsoup4",
+      "version": "4.15.0"
+    },
+    {
+      "name": "playwright",
+      "version": "1.65.0"
+    },
+    {
+      "name": "psutil",
+      "version": "7.2.2"
+    }
+  ],
+  "schema_version": 1,
+  "vendored_components": [
+    {
+      "artifacts": [
+        {
+          "path": "third_party/llama.cpp/build/bin/llama-server",
+          "present": true
+        },
+        {
+          "path": "third_party/llama.cpp/build/bin/llama-mtmd-cli",
+          "present": true
+        },
+        {
+          "path": "third_party/llama.cpp/build/bin/libggml-vulkan.so",
+          "present": true
+        }
+      ],
+      "commit": "a4d4f2fd4ec85ec6a0a9ece4870416c1b6cc24f5",
+      "name": "llama.cpp",
+      "path": "third_party/llama.cpp",
+      "role": "llama-server (planner) and llama-mtmd-cli (VLM)"
+    },
+    {
+      "artifacts": [
+        {
+          "path": "third_party/whisper.cpp/build/bin/whisper-cli",
+          "present": true
+        }
+      ],
+      "commit": "bd9e1a12352fa57e448bdea6a0649aa9c24c64aa",
+      "name": "whisper.cpp",
+      "path": "third_party/whisper.cpp",
+      "role": "whisper-cli speech-to-text"
+    }
+  ],
+  "verification_run": "2026-11-10",
+  "verified_at": "2026-11-10T16:31:17Z"
+}

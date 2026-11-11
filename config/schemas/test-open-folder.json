@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "intent": {
+      "type": "string",
+      "enum": ["open_folder"]
+    },
+    "path": {
+      "type": "string",
+      "enum": ["~/Downloads"]
+    },
+    "requires_confirmation": {
+      "type": "boolean"
+    }
+  },
+  "required": ["intent", "path", "requires_confirmation"],
+  "additionalProperties": false
+}

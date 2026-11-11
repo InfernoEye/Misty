@@ -1,0 +1,12 @@
+aa0e02f1cf892930b1870670908bb6a9c82b5f997931fcf1c5b6aadcc2e2c35e  ./app/engine/activity_store.py
+f865fceb606f7472683e8e82d13c9a84535fbebc5bcd16c127bf0fbce15741d6  ./app/engine/clipboard_bridge.py
+c2591c8ef8ae7df8813e7ad81c01c120246941de5e773ccb982f17047fced636  ./app/engine/__pycache__/activity_store.cpython-314.pyc
+198cafc1fd7e88fb4852908cfe0e64526a5696afaa3b5738737862016128e719  ./app/engine/__pycache__/clipboard_bridge.cpython-314.pyc
+68de9b453f0173487418ff61d440d1eb2547e10d14f3c47347b566d49fd76321  ./app/engine/__pycache__/voice_controller.cpython-314.pyc
+9960d6fd92bb8ea759898104b6451e7276f200298c58ea92a85cfd653501bd06  ./app/engine/voice_controller.py
+c4d0fb822528a6f70d1eac4b506adf92ef9e92d46c765cd4dc289d47841b573e  ./app/main.py
+832e0c4867167a780872891c232dfb0237465e9460af92d4000d0625aa9fd7b9  ./app/popup_process.py
+e19818a070461f78fef15595da0fdd21e0d91e37daa8e66becb06001ca9cd8f0  ./app/__pycache__/main.cpython-314.pyc
+8a6f8f245a1cbbc55006417ec921951b940fedfca52465efa0f4244b70eb5179  ./app/__pycache__/popup_process.cpython-314.pyc
+92f4464eadd6678a5ed06220cca064956ab725e2c80833554def3928a61747ea  ./README.md
+1d1924b19c7cdc01d9ee96931a9bde7597cd64ede1f02c2d4630578be9ee349c  ./RESTORE.sh
