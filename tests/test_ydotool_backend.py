@@ -46,12 +46,35 @@ class FakeRunner:
         return _Completed(self.returncode)
 
 
+class PerfectCursor:
+    """Cursor that lands exactly on each absolute move target."""
+
+    def __init__(self, runner):
+        self.runner = runner
+        self.position = (0, 0)
+
+    def __call__(self, argv, input=None, timeout=None):
+        if "--absolute" in argv:
+            self.position = (
+                int(argv[argv.index("-x") + 1]),
+                int(argv[argv.index("-y") + 1]),
+            )
+        elif "mousemove" in argv:
+            self.position = (
+                self.position[0] + int(argv[argv.index("-x") + 1]),
+                self.position[1] + int(argv[argv.index("-y") + 1]),
+            )
+        return self.runner(argv, input, timeout)
+
+    def read(self):
+        return self.position
+
+
 def backend(**overrides):
     options = dict(
         which=lambda name: "/usr/bin/ydotool",
         exists=lambda path: path == UINPUT_PATH,
         access=lambda path, mode: True,
-        env={"XDG_SESSION_TYPE": "x11"},
     )
     options.update(overrides)
     runner = options.pop("runner", None) or FakeRunner()
@@ -110,31 +133,44 @@ class TypeTextTests(unittest.TestCase):
 
 
 class KeyTests(unittest.TestCase):
-    def test_ctrl_v_uses_evdev_codes(self):
+    def test_ctrl_v_sends_press_and_release_in_order(self):
         runner = FakeRunner()
         client, _ = backend(runner=runner)
         result = client.execute(press_key("ctrl+v"))
 
         self.assertTrue(result["success"])
         self.assertEqual(
-            runner.calls[0][0], ["/usr/bin/ydotool", "key", "29,51"]
+            runner.calls[0][0],
+            ["/usr/bin/ydotool", "key", "29:1", "47:1", "47:0", "29:0"],
         )
         self.assertIsNone(runner.calls[0][1])
 
-    def test_key_codes_helper(self):
-        self.assertEqual(key_codes("ctrl+alt+t"), [29, 56, 49])
+    def test_key_codes_match_kernel_header(self):
+        self.assertEqual(key_codes("ctrl+alt+t"), [29, 56, 20])
+        self.assertEqual(key_codes("ctrl+v"), [29, 47])
+        self.assertEqual(key_codes("a"), [30])
+        self.assertEqual(key_codes("q"), [16])
+        self.assertEqual(key_codes("z"), [44])
+        self.assertEqual(key_codes("1"), [2])
+        self.assertEqual(key_codes("0"), [11])
         self.assertEqual(key_codes("f12"), [88])
         self.assertEqual(key_codes("enter"), [28])
+        self.assertEqual(key_codes("insert"), [110])
 
-    def test_wayland_session_uses_symbolic_keys(self):
+    def test_modifiers_are_released_in_reverse(self):
         runner = FakeRunner()
-        client, _ = backend(runner=runner, env={"XDG_SESSION_TYPE": "wayland"})
+        client, _ = backend(runner=runner)
         client.execute(press_key("ctrl+shift+v"))
         self.assertEqual(
-            runner.calls[0][0],
-            ["/usr/bin/ydotool", "key",
-             "KEY_LEFTCTRL", "KEY_LEFTSHIFT", "KEY_V"],
+            runner.calls[0][0][2:],
+            ["29:1", "42:1", "47:1", "47:0", "42:0", "29:0"],
         )
+
+    def test_a_plain_key_is_pressed_and_released(self):
+        runner = FakeRunner()
+        client, _ = backend(runner=runner)
+        client.execute(press_key("enter"))
+        self.assertEqual(runner.calls[0][0][2:], ["28:1", "28:0"])
 
     def test_pointer_actions_are_translated(self):
         # Pointer control is supported now: it must produce real ydotool
@@ -149,10 +185,28 @@ class KeyTests(unittest.TestCase):
         # Clicking wherever the cursor happens to be would hit the wrong
         # target, so a click is always a move followed by the press.
         runner = FakeRunner()
-        client, _ = backend(runner=runner)
+        cursor = PerfectCursor(runner)
+        client, _ = backend(runner=cursor, cursor_reader=cursor.read)
         client.execute(pointer_click(40, 50))
         verbs = [call[0][1] for call in runner.calls]
         self.assertEqual(verbs, ["mousemove", "click"])
+
+    def test_click_uses_ydotool_hex_button_codes(self):
+        runner = FakeRunner()
+        cursor = PerfectCursor(runner)
+        client, _ = backend(runner=cursor, cursor_reader=cursor.read)
+        client.execute(pointer_click(40, 50))
+        self.assertEqual(runner.calls[1][0], ["/usr/bin/ydotool", "click", "0xC0"])
+
+    def test_double_click_repeats_the_press(self):
+        runner = FakeRunner()
+        cursor = PerfectCursor(runner)
+        client, _ = backend(runner=cursor, cursor_reader=cursor.read)
+        client.execute(pointer_click(40, 50, count=2))
+        self.assertEqual(
+            runner.calls[1][0],
+            ["/usr/bin/ydotool", "click", "--repeat", "2", "0xC0"],
+        )
 
     def test_an_empty_scroll_is_refused(self):
         runner = FakeRunner()
@@ -217,7 +271,7 @@ class PrerequisiteTests(unittest.TestCase):
             {
                 "backend_unavailable", "uinput_unavailable",
                 "unsupported_action", "invalid_action",
-                "timeout", "command_failed",
+                "timeout", "command_failed", "pointer_not_verified",
             },
         )
 
@@ -235,6 +289,25 @@ class FailureTests(unittest.TestCase):
         client, _ = backend(runner=runner)
         result = client.execute(type_text(SECRET))
         self.assertEqual(result["code"], "timeout")
+
+    def test_failed_key_press_releases_every_key_it_pressed(self):
+        runner = FakeRunner(raises=subprocess.TimeoutExpired("ydotool", 5))
+        client, _ = backend(runner=runner)
+        result = client.execute(press_key("ctrl+shift+v"))
+
+        self.assertEqual(result["code"], "timeout")
+        press_argv = runner.calls[0][0]
+        self.assertEqual(press_argv[2:], ["29:1", "42:1", "47:1", "47:0", "42:0", "29:0"])
+        release_argv = runner.calls[1][0]
+        self.assertEqual(release_argv[1:], ["key", "47:0", "42:0", "29:0"])
+
+    def test_nonzero_key_press_also_releases_held_keys(self):
+        runner = FakeRunner(returncode=1)
+        client, _ = backend(runner=runner)
+        result = client.execute(press_key("ctrl+v"))
+
+        self.assertEqual(result["code"], "command_failed")
+        self.assertEqual(runner.calls[1][0][1:], ["key", "47:0", "29:0"])
 
     def test_unexpected_runner_error_is_contained(self):
         runner = FakeRunner(raises=OSError("boom"))

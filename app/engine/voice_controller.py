@@ -1861,7 +1861,12 @@ class VoiceController(QObject):
         try:
             from app.desktop.ydotool_backend import YdotoolBackend
 
-            candidate = YdotoolBackend()
+            cursor_reader = (
+                self.window_service.cursor_position
+                if self.window_service is not None
+                else None
+            )
+            candidate = YdotoolBackend(cursor_reader=cursor_reader)
             capabilities = candidate.capabilities()
             if capabilities.get("available") is True:
                 backend = candidate

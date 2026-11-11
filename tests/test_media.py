@@ -463,6 +463,41 @@ class NowPlayingTests(unittest.TestCase):
         self.assertEqual(result["code"], "unsupported")
 
 
+class FriendlyPlayerNameTests(unittest.TestCase):
+    def two_players(self):
+        return FakeBus({
+            "org.mpris.MediaPlayer2.stremio": FakePlayerProxy(
+                identity="Stremio", playback_status="Paused",
+            ),
+            "org.mpris.MediaPlayer2.chromium.instance9": FakePlayerProxy(
+                identity="Helium", playback_status="Playing",
+            ),
+        })
+
+    def test_a_display_name_resolves_to_the_running_player(self):
+        result = MediaController(bus=self.two_players()).now_playing(player="Helium")
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["player"], "org.mpris.MediaPlayer2.chromium.instance9")
+
+    def test_a_display_name_can_control_the_resolved_player(self):
+        bus = self.two_players()
+        result = MediaController(bus=bus).command("pause", player="Stremio")
+        self.assertTrue(result["success"], result)
+        self.assertEqual(
+            bus.get_object_calls[-1][0], "org.mpris.MediaPlayer2.stremio"
+        )
+
+    def test_an_unknown_display_name_is_no_player(self):
+        result = MediaController(bus=self.two_players()).now_playing(player="Spotify")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["code"], "no_player")
+
+    def test_a_display_name_is_not_a_bus_name_escape(self):
+        result = MediaController(bus=self.two_players()).now_playing(player="../etc")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["code"], "invalid_player")
+
+
 class CommandTests(unittest.TestCase):
     def test_each_allowlisted_action_maps_to_one_mpris_method(self):
         expected = {

@@ -3039,6 +3039,7 @@ class ToolRegistry:
         from app.desktop.input import (
             DesktopInput,
             pointer_click,
+            pointer_drag,
             pointer_move,
             press_key,
             scroll,
@@ -3054,10 +3055,22 @@ class ToolRegistry:
                     )
                 action = press_key(combo)
             elif name == "desktop_drag":
-                return self._desktop_error(
-                    "unsupported_action",
-                    "Dragging is not available with this build.",
-                )
+                endpoints = [
+                    arguments.get(key) for key in ("from_x", "from_y", "to_x", "to_y")
+                ]
+                for value in endpoints:
+                    if isinstance(value, bool) or not isinstance(value, int):
+                        return self._desktop_error(
+                            "invalid_arguments", "Drag coordinates must be integers."
+                        ) | {"not_executed": True}
+                from_x, from_y, to_x, to_y = endpoints
+                for x, y in ((from_x, from_y), (to_x, to_y)):
+                    problem = self._coordinate_problem(x, y)
+                    if problem is not None:
+                        return self._desktop_error(
+                            "invalid_arguments", problem
+                        ) | {"not_executed": True}
+                action = pointer_drag(from_x, from_y, to_x, to_y)
             elif name == "desktop_type_text":
                 text = arguments.get("text")
                 if not isinstance(text, str) or not text.strip():
