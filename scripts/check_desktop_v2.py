@@ -11,6 +11,9 @@ import base64
 from io import BytesIO
 import json
 import math
+import os
+import shutil
+import subprocess
 from pathlib import Path
 import sys
 import threading
@@ -24,7 +27,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.desktop.providers.base import DesktopProviderError
-from app.desktop.providers.cua_mcp import CuaMcpProvider
+from app.desktop.providers.cua_mcp import CuaMcpProvider, NONCAPTURE_HEALTH_CHECKS
 
 
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
@@ -97,19 +100,82 @@ def _positive_integer(value):
     return number
 
 
+def environment_health(*, deadline=None):
+    """Content-free session hints; service presence is not trusted targeting."""
+    session = os.environ.get("XDG_SESSION_TYPE", "").casefold()
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").casefold().split(":")
+    enabled = os.environ.get("CUA_DRIVER_RS_ENABLE_WAYLAND", "").strip()
+    result = {
+        "session_type": session if session in {"x11", "wayland"} else "unknown",
+        "desktop_family": "kde" if any(value in {"kde", "plasma"} for value in desktop) else "other",
+        "native_wayland_opt_in": bool(enabled and enabled != "0" and enabled.casefold() != "false"),
+        "process_namespace_hint": "unknown",
+        "kwin_service_present": None,
+        "cua_kwin_helper_present": None,
+    }
+    try:
+        result["process_namespace_hint"] = (
+            "bwrap" if Path("/proc/1/comm").read_text().strip() == "bwrap" else "not_detected")
+    except OSError:
+        pass
+    executable = shutil.which("gdbus") if result["desktop_family"] == "kde" else None
+    if executable:
+        for name, field in (("org.kde.KWin", "kwin_service_present"),
+                            ("org.cua.KWinTarget", "cua_kwin_helper_present")):
+            remaining = 2.0 if deadline is None else min(2.0, deadline - time.monotonic())
+            if remaining <= 0:
+                break
+            try:
+                call = subprocess.run([executable, "call", "--session", "--dest", "org.freedesktop.DBus",
+                    "--object-path", "/org/freedesktop/DBus", "--method",
+                    "org.freedesktop.DBus.NameHasOwner", name], stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=remaining, check=False)
+                if call.returncode == 0:
+                    result[field] = {b"(true,)": True, b"(false,)": False}.get(call.stdout.strip())
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+    return result
+
+
+def _noncapture_health(provider, cancel, deadline):
+    if "health_report" not in {tool.get("name") for tool in provider.catalog()}:
+        return {"status": "unavailable", "checks": {}}
+    outcome = provider.call("health_report", {"include": list(NONCAPTURE_HEALTH_CHECKS)},
+                            cancel=cancel, deadline=deadline)
+    data = outcome.structured
+    if outcome.is_error or not isinstance(data, dict) or data.get("schema_version") != "1":
+        return {"status": "invalid", "checks": {}}
+    checks = {}
+    for item in data.get("checks", []) if isinstance(data.get("checks"), list) else []:
+        if not isinstance(item, dict) or item.get("name") not in NONCAPTURE_HEALTH_CHECKS:
+            continue
+        name, status = item["name"], item.get("status")
+        if name in checks or not isinstance(status, str) or status not in {"pass", "fail", "skip"}:
+            return {"status": "invalid", "checks": {}}
+        checks[name] = status
+    if set(checks) != set(NONCAPTURE_HEALTH_CHECKS):
+        return {"status": "incomplete", "checks": checks}
+    return {"status": "reported", "checks": checks}
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pid", type=_positive_integer,
                         help="Exact process ID from desktop window discovery.")
     parser.add_argument("--window-id", type=_positive_integer,
                         help="Exact native window ID, not a title or positional index.")
+    parser.add_argument("--health", action="store_true",
+                        help="Include non-capture driver health and read-only session/helper metadata.")
     parser.add_argument("--timeout", type=float, default=30.0,
                         help="Total observation admission deadline in seconds (1–120; default 30).")
     return parser
 
 
-def probe(*, pid=None, window_id=None, timeout=30.0, provider_factory=CuaMcpProvider):
+def probe(*, pid=None, window_id=None, timeout=30.0, provider_factory=CuaMcpProvider,
+          health=False, environment_probe=environment_health):
     """Return (content-free summary, exit_code), always closing the provider."""
+    if not isinstance(health, bool):
+        raise ValueError("health must be a boolean")
     if (pid is None) != (window_id is None):
         raise ValueError("pid and window_id must be supplied together")
     if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
@@ -149,6 +215,11 @@ def probe(*, pid=None, window_id=None, timeout=30.0, provider_factory=CuaMcpProv
         summary["version"] = capability.version
         catalog = provider.catalog()
         summary["catalog_tool_count"] = len(catalog)
+        if health:
+            summary["environment_health"] = environment_probe(deadline=deadline)
+            summary["noncapture_health"] = (
+                _noncapture_health(provider, cancel, deadline)
+                if summary["available"] else {"status": "unavailable", "checks": {}})
         if not summary["available"]:
             summary["phase_gate"] = "provider_unavailable"
         else:
@@ -251,7 +322,8 @@ def main(argv=None):
         parser.error("--pid and --window-id must be supplied together")
     if not 1 <= args.timeout <= 120:
         parser.error("--timeout must be between 1 and 120 seconds")
-    summary, exit_code = probe(pid=args.pid, window_id=args.window_id, timeout=args.timeout)
+    summary, exit_code = probe(pid=args.pid, window_id=args.window_id, timeout=args.timeout,
+                               health=args.health)
     print(json.dumps(summary, indent=2, sort_keys=True, allow_nan=False))
     return exit_code
 

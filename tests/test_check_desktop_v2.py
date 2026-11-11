@@ -253,7 +253,7 @@ class DiagnosticTests(unittest.TestCase):
         with patch("scripts.check_desktop_v2.probe", return_value=(summary, 2)) as fake:
             with contextlib.redirect_stdout(output):
                 self.assertEqual(main([]), 2)
-        fake.assert_called_once_with(pid=None, window_id=None, timeout=30.0)
+        fake.assert_called_once_with(pid=None, window_id=None, timeout=30.0, health=False)
         self.assertEqual(json.loads(output.getvalue()), summary)
 
     def test_cli_requires_exact_target_pair(self):

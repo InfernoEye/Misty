@@ -24,12 +24,19 @@ from app.desktop.providers.base import (
 
 PINNED_VERSION = "0.28.0"
 MAX_MESSAGE_BYTES = 24 * 1024 * 1024
+NONCAPTURE_HEALTH_CHECKS = (
+    "binary_version", "platform_supported", "session_active", "ax_capability",
+)
+CORE_OBSERVATION_TOOLS = frozenset({"list_apps", "list_windows", "get_window_state"})
 READ_ONLY_ARGUMENTS = {
     "list_apps": frozenset(),
     "list_windows": frozenset({"pid", "on_screen_only"}),
     "get_window_state": frozenset({"pid", "window_id", "session",
         "include_accessibility_tree", "include_screenshot", "query",
         "max_elements", "max_depth", "max_dimension"}),
+    # Optional catalog tool. An explicit nonempty include list is mandatory;
+    # capture-capability checks can take screenshots and are never admitted.
+    "health_report": frozenset({"include"}),
 }
 READ_ONLY_TOOLS = frozenset(READ_ONLY_ARGUMENTS)
 
@@ -379,7 +386,7 @@ class CuaMcpProvider:
                     except Exception as exc:
                         raise DesktopProviderError("catalog_invalid", "Reviewed desktop schema is invalid or requires remote data.") from exc
                 self._tools[tool["name"]] = copy.deepcopy(tool)
-            if not READ_ONLY_TOOLS.issubset(self._tools):
+            if not CORE_OBSERVATION_TOOLS.issubset(self._tools):
                 raise DesktopProviderError("catalog_drift", "Required reviewed observation tools are missing.")
             self._ready = True
             return CapabilityReport(True, "cua-mcp", PINNED_VERSION,
@@ -398,10 +405,19 @@ class CuaMcpProvider:
             raise DesktopProviderError("not_ready", "Desktop provider is not ready.")
         if tool_name not in READ_ONLY_TOOLS:
             raise DesktopProviderError("input_disabled", "This desktop tool is not admitted by the read-only adapter.")
+        if tool_name not in self._tools:
+            raise DesktopProviderError("tool_unavailable", "Reviewed observation tool is unavailable.")
         if not isinstance(arguments, dict):
             raise DesktopProviderError("invalid_arguments", "Tool arguments must be an object.")
         if set(arguments) - READ_ONLY_ARGUMENTS[tool_name]:
             raise DesktopProviderError("invalid_arguments", "Unreviewed desktop argument is not admitted.")
+        if tool_name == "health_report":
+            checks = arguments.get("include")
+            if (not isinstance(checks, list) or not checks
+                    or len(checks) > len(NONCAPTURE_HEALTH_CHECKS)
+                    or any(not isinstance(check, str) or check not in NONCAPTURE_HEALTH_CHECKS for check in checks)
+                    or len(set(checks)) != len(checks)):
+                raise DesktopProviderError("invalid_arguments", "Only explicit non-capture health checks are admitted.")
         # get_window_state can optionally write an image to disk; that is not
         # a read-only observation capability and is never admitted here.
         if "screenshot_out_file" in arguments:

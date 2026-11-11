@@ -18,7 +18,7 @@ MISTY_DESKTOP_BACKEND=cua .venv/bin/python misty.py
 
 At this stage `cua` means the [read-only readiness controller](../app/brain/desktop_controller.py): GUI requests discover visible-window metadata and return the outstanding capability gate. They do not ask permission to click, capture arbitrary windows, load the visual model or send input. [Legacy pointer dispatch](../app/brain/tools.py) also rejects direct pointer/keyboard tool calls while this backend is selected, including confirmed calls, so the planner cannot bypass the gate. Ordinary non-GUI tools remain on their existing route. Backend selection is not a claim of full v2 rollout.
 
-The separate [visual decision runtime](../app/brain/visual_decision.py) provides a task-scoped authenticated loopback multimodal server, real image blocks, exact schemas, strict one-decision validation, and bounded cleanup. It must pass an actual model/image probe before readiness and never executes tools itself. It has not been connected to the production input loop or validated on the installed GPU/model; fake-server tests do not establish that acceptance. Policy/target execution, model/voice handoff and controlled-app acceptance remain pending behind the host gate.
+The separate [visual decision runtime](../app/brain/visual_decision.py) provides a task-scoped authenticated loopback multimodal server, real image blocks, exact schemas, strict one-decision validation, and bounded cleanup. A [guarded visual-runtime smoke check](VISUAL_RUNTIME_CHECK.md) now provides metadata-only verification by default and an explicitly acknowledged synthetic-model probe. It must pass an actual model/image probe before readiness and never executes tools itself. It has not been connected to the production input loop or validated on the installed GPU/model; fake-server tests do not establish that acceptance. Policy/target execution, model/voice handoff and controlled-app acceptance remain pending behind the host gate.
 
 Optional dependency pins: [requirements-desktop-v2.txt](../requirements-desktop-v2.txt). They do not auto-install or upgrade on application startup.
 
@@ -33,7 +33,7 @@ Earlier implementation probes reported:
 
 These are prior recorded observations, not new native probes performed by the diagnostic's mocked tests. The [design](DESKTOP_AGENT_V2_DESIGN.md#12-phased-delivery-and-gates) keeps desktop writes gated pending live capability, policy and controlled-application acceptance.
 
-The adapter pins 0.28.0. Current [Cua platform documentation](https://cua.ai/docs/cua-driver/concepts/platform-support) describes KDE/KWin as experimental and its helper as read-only for important native input routes. It distinguishes XWayland windows from native Wayland windows and requires an explicit native-Wayland opt-in. Current documentation is not itself a guarantee of every pinned-version contract. Do not set an opt-in, install a compositor helper, request portal grants, escalate privileges or switch delivery/backend automatically to make a refusal disappear.
+The adapter pins 0.28.0. Current [Cua platform documentation](https://cua.ai/docs/cua-driver/concepts/platform-support) describes KDE/KWin as experimental and its helper as read-only for important native input routes. It distinguishes XWayland windows from native Wayland windows and requires an explicit native-Wayland opt-in. Current documentation is not itself a guarantee of every pinned-version contract. Do not silently set an opt-in, install a compositor helper, request portal grants, escalate privileges or switch delivery/backend automatically to make a refusal disappear. A separately authorized, process-local native-Wayland discovery probe does not authorize input.
 
 Cua has product telemetry and startup update checks by default. The provider sets the child-local environment `CUA_DRIVER_RS_TELEMETRY_ENABLED=0` and `CUA_DRIVER_RS_UPDATE_CHECK=0`; it does not rewrite persisted preferences or enable history/recording.
 
@@ -84,6 +84,18 @@ Use local process inspection to identify the intended application's PID. Do not 
 
 Optional `--timeout N` bounds the total observation admission deadline to 1–120 seconds (default 30). Provider cleanup has its own bounded termination period. Interrupting the command requests cancellation and closes the owned provider; no input has been admitted in either mode.
 
+## Optional non-capture health
+
+```bash
+.venv/bin/python scripts/check_desktop_v2.py --health
+```
+
+This adds only the explicitly selected `binary_version`, `platform_supported`, `session_active` and `ax_capability` checks. The adapter refuses an empty/omitted include list, `skip`, capture checks and arbitrary check names before contacting the driver. It also reports sanitized session-family/native-opt-in/PID-namespace hints and queries D-Bus `NameHasOwner` for KWin and Cua's helper. These queries do not load a helper, activate a window or request permissions. Raw health messages/hints are not printed. The optional health tool does not become required for older catalogs.
+
+The user's earlier normal-terminal result was zero visible windows with default Cua discovery. A subsequently authorized native-Wayland probe in the agent's sandbox also returned zero windows. The enhanced sandbox report showed basic health/accessibility checks passing, KWin present, `org.cua.KWinTarget` absent, and a `bwrap` PID-namespace hint. This is not proof that the normal host's native opt-in has been tested successfully.
+
+The **pinned** [KWin adapter source](https://github.com/trycua/cua/blob/cua-driver-rs-v0.28.0/libs/cua-driver/rust/crates/platform-linux/src/wayland/kwin_helper.rs) establishes a separate limitation: its raw-input capability function returns false and its focused-window input wrapper refuses rather than invoking the action. Installing the read-only discovery helper alone would therefore not establish supported target-addressed raw input. Misty's window UUIDs must not be substituted for driver-native tokens to evade this boundary. A different explicitly selected provider or a proven supported driver route is required before input can be integrated for this host.
+
 ## Reading the result
 
 | Field / gate | Meaning |
@@ -108,6 +120,8 @@ Optional `--timeout N` bounds the total observation admission deadline to 1–12
 Exit statuses: `0` = requested read-only discovery/snapshot passed; `2` = invalid CLI usage or an unverified/failed gate; `130` = keyboard cancellation when cleanup succeeds. Unconfirmed cleanup returns `2`. Neither success status implies the desktop task was completed.
 
 ## Validation and remaining acceptance
+
+The health/smoke-check extension passed 70 focused tests and full discovery ran 2,220 tests successfully (one skipped). Live read-only native discovery still returned zero windows, even while the selected non-capture health checks passed. The default visual smoke check found all artifacts but launched no model. No desktop input, helper installation, permission request or real multimodal inference was performed in this follow-up.
 
 [Mocked diagnostic tests](../tests/test_check_desktop_v2.py) cover default discovery-only behavior, exact target binding, bounded snapshot parameters, correct PNG decoding, malformed base64/image bytes, MIME/dimension mismatches, image limits, missing images, Wayland refusal, no private prose in summaries, unconditional input gating, cancellation and cleanup failure. They do not call a native driver or start a model.
 
