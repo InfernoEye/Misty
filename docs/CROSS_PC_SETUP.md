@@ -166,7 +166,7 @@ bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-net \
   .venv/bin/python -B -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The last verified run: 2,207 tests, OK (1 skipped). Passing tests does **not**
+The last verified run (2026-11-11, working tree): 2,519 tests, OK (1 skipped). Passing tests does **not**
 prove live microphone, GPU, KWin or browser behaviour; exercise those in the
 real session. `scripts/check_desktop_v2.py` reports the optional Cua
 capability gate separately.
