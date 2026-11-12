@@ -1,6 +1,8 @@
 
 def process_session_id(pid):
-    """Return the session id of ``pid``, or None when it has exited."""
+    """Return a process session id, or None for an invalid/exited process."""
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return None
     try:
         with open(f"/proc/{pid}/stat", encoding="utf-8") as stat:
             return int(stat.read().rsplit(")", 1)[1].split()[3])
@@ -15,7 +17,10 @@ def window_in_session(windows, session_id):
     when no window belongs to the session, and raises when more than one does,
     so an ambiguous launch never selects a window silently.
     """
-    if not session_id:
+    # Zero can represent a session outside the visible PID namespace; it is
+    # not usable proof that this launch owns another process's window.
+    if (isinstance(session_id, bool) or not isinstance(session_id, int)
+            or session_id <= 0):
         return None
     matches = [
         window for window in windows

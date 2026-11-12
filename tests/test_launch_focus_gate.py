@@ -132,19 +132,39 @@ class TypingFocusGateTests(unittest.TestCase):
 
 
 class WindowInSessionTests(unittest.TestCase):
+    # The test runner may legitimately observe SID 0 in a PID namespace. Use
+    # explicit positive fixture identities; SID 0 must remain fail closed.
     def test_picks_the_window_owned_by_the_session(self):
-        session = process_session_id(os.getpid())
-        windows = [{"id": "mine", "pid": os.getpid()}, {"id": "other", "pid": 1}]
-        self.assertEqual(window_in_session(windows, session)["id"], "mine")
+        windows = [{"id": "mine", "pid": 4242}, {"id": "other", "pid": 9000}]
+        with mock.patch("app.desktop.launch_window.process_session_id",
+                        side_effect=lambda pid: {4242: 1234, 9000: 5678}[pid]):
+            self.assertEqual(window_in_session(windows, 1234)["id"], "mine")
 
     def test_no_window_in_session_returns_none(self):
-        self.assertIsNone(window_in_session([{"id": "other", "pid": 1}], 999999999))
+        with mock.patch("app.desktop.launch_window.process_session_id", return_value=5678):
+            self.assertIsNone(window_in_session([{"id": "other", "pid": 9000}], 1234))
 
     def test_ambiguous_session_raises(self):
-        session = process_session_id(os.getpid())
-        windows = [{"id": "a", "pid": os.getpid()}, {"id": "b", "pid": os.getpid()}]
-        with self.assertRaises(RuntimeError):
-            window_in_session(windows, session)
+        windows = [{"id": "a", "pid": 4242}, {"id": "b", "pid": 4242}]
+        with mock.patch("app.desktop.launch_window.process_session_id", return_value=1234):
+            with self.assertRaises(RuntimeError):
+                window_in_session(windows, 1234)
+
+    def test_unknown_or_invalid_session_cannot_authorize_a_window(self):
+        for session in (None, 0, -1, True, "1234"):
+            with self.subTest(session=session), mock.patch(
+                    "app.desktop.launch_window.process_session_id", return_value=session) as lookup:
+                self.assertIsNone(window_in_session([{"id": "other", "pid": 4242}], session))
+                lookup.assert_not_called()
+
+    def test_process_parser_matches_current_session_even_in_pid_namespace(self):
+        self.assertEqual(process_session_id(os.getpid()), os.getsid(0))
+
+    def test_invalid_pid_cannot_form_a_proc_path(self):
+        for pid in (None, True, 0, -1, "../../etc", "1234"):
+            with self.subTest(pid=pid), mock.patch("builtins.open") as opened:
+                self.assertIsNone(process_session_id(pid))
+                opened.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -118,6 +118,78 @@ class VoiceRequestCancellationTests(unittest.TestCase):
         c._release()
         c._start_confirmation_worker.assert_not_called()
 
+    def test_cancelled_owner_cannot_create_an_approval(self):
+        c = self.make()
+        c._task_cancel_event = threading.Event()
+        c._task_cancel_event.set()
+        with patch.object(c._confirmation_broker, "begin") as begin:
+            self.assertFalse(c._request_confirmation("close_window", {}, "Close?"))
+            begin.assert_not_called()
+
+    def test_cancel_between_approval_checks_denies_without_wait(self):
+        c = self.make()
+        token = threading.Event()
+        c._task_cancel_event = token
+        begin = c._confirmation_broker.begin
+        def racing_begin(*args):
+            pending = begin(*args)
+            token.set()
+            return pending
+        with patch.object(c._confirmation_broker, "begin", side_effect=racing_begin), \
+             patch.object(c._confirmation_broker, "wait") as wait:
+            self.assertFalse(c._request_confirmation("close_window", {}, "Close?"))
+            wait.assert_not_called()
+        self.assertFalse(c._confirmation_broker.is_pending())
+
+    def test_cancelled_owner_button_can_only_deny(self):
+        c = self.make()
+        c._task_cancel_event = threading.Event()
+        pending = c._confirmation_broker.begin("close_window", {}, "Close?")
+        c._task_cancel_event.set()
+        self.assertTrue(c.resolve_confirmation(True, pending["request_id"]))
+        self.assertFalse(c._confirmation_broker.wait(pending))
+
+    def test_approval_racing_cancel_does_not_report_approved(self):
+        c = self.make()
+        c._task_cancel_event = threading.Event()
+        def racing_wait(pending):
+            c._task_cancel_event.set()
+            c._confirmation_broker.resolve(True, pending["request_id"])
+            return True
+        with patch.object(c._confirmation_broker, "wait", side_effect=racing_wait):
+            self.assertFalse(c._request_confirmation("close_window", {}, "Close?"))
+
+    def test_prompt_resolving_while_microphone_opens_discards_answer(self):
+        c = self.make()
+        c._busy = True
+        pending = c._confirmation_broker.begin("close_window", {}, "Close?")
+        c.recorder.start = Mock(side_effect=lambda: c._confirmation_broker.resolve(
+            True, pending["request_id"]))
+        c.recorder.discard = Mock()
+        c._press()
+        c.recorder.discard.assert_called_once()
+        self.assertFalse(c._confirmation_recording)
+        self.assertIsNone(c._confirmation_request_id)
+        self.assertNotIn("listening", c.state_changed.values)
+        c._start_confirmation_worker = Mock()
+        c._release()
+        c._start_confirmation_worker.assert_not_called()
+
+    def test_agent_factory_failure_releases_admission_ownership(self):
+        c = self.make()
+        c._busy = True
+        token = threading.Event()
+        c._voice_cancel_event = token
+        c._task_agent = Mock(side_effect=RuntimeError("factory failed"))
+        c._cleanup_models = Mock()
+        with self.assertRaisesRegex(RuntimeError, "factory failed"):
+            c._process_request([0.1], token)
+        self.assertFalse(c._busy)
+        self.assertFalse(c._agent_busy)
+        self.assertIsNone(c._voice_cancel_event)
+        c._cleanup_models.assert_called_once()
+        c._notify_escape_state.assert_called()
+
 
 class ToolCancellationGateTests(unittest.TestCase):
     def test_cancel_after_approval_prevents_tool_execution(self):

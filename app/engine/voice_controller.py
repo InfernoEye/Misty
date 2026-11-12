@@ -1116,8 +1116,16 @@ class VoiceController(QObject):
         except Exception:
             pass
 
+    def _request_cancelled(self):
+        """Read the admitted owner's cancellation state, including pre-worker input."""
+        with self._task_state_lock():
+            event = self._session_state("_task_cancel_event", None)
+        voice_event = getattr(self, "_voice_cancel_event", None)
+        return bool((event is not None and event.is_set())
+                    or (voice_event is not None and voice_event.is_set()))
+
     def _request_confirmation(self, name, arguments, description):
-        if self._shutting_down:
+        if self._shutting_down or self._request_cancelled():
             return False
 
         pending = self._confirmation_broker.begin(
@@ -1125,8 +1133,10 @@ class VoiceController(QObject):
         )
         if pending is None:
             return False
-        if self._shutting_down:
-            self._confirmation_broker.cancel()
+        if self._shutting_down or self._request_cancelled():
+            # Cancel may have arrived between the first check and begin().
+            # Resolve only this admitted prompt; never a newer broker owner.
+            self._confirmation_broker.resolve(False, pending["request_id"])
             return False
 
         self.activity_event.emit({
@@ -1149,10 +1159,14 @@ class VoiceController(QObject):
         })
 
         approved = self._confirmation_broker.wait(pending)
-        if (self._confirmation_recording
-                and self._confirmation_request_id == pending["request_id"]):
-            # Buttons or timeout may resolve approval while the shortcut is
-            # held. Do not leave an orphan recording blocking future presses.
+        # A button approval racing Cancel cannot revive a cancelled owner.
+        approved = approved and not self._shutting_down and not self._request_cancelled()
+        with self._recording_lock:
+            # Serialize with recorder.start(): a prompt resolving while the
+            # audio device opens must not leave an orphan recording.
+            abort_answer = (self._confirmation_recording
+                            and self._confirmation_request_id == pending["request_id"])
+        if abort_answer:
             self._abort_recording("The confirmation prompt closed.")
 
         self.confirmation_resolved.emit(approved)
@@ -1232,7 +1246,7 @@ class VoiceController(QObject):
             )
             return False
 
-        if self._shutting_down:
+        if self._shutting_down or self._request_cancelled():
             approved = False
 
         resolved = self._confirmation_broker.resolve(
@@ -2531,7 +2545,22 @@ class VoiceController(QObject):
         cancel_event = cancel_event if cancel_event is not None else threading.Event()
         with self._task_state_lock():
             self._task_cancel_event = cancel_event
-        agent = self._task_agent()
+        try:
+            agent = self._task_agent()
+        except Exception:
+            # Factory/registry construction is part of admission ownership too.
+            # It must not strand _busy before the normal session finally exists.
+            try:
+                self._cleanup_models()
+            finally:
+                if getattr(self, "_voice_cancel_event", None) is cancel_event:
+                    self._voice_cancel_event = None
+                self._agent_busy = False
+                self._busy = False
+                self._notify_escape_state()
+                if not self._shutting_down:
+                    self.ready_reset_requested.emit()
+            raise
         agent.cancel_event = cancel_event
         turn_text = str(args[0]) if args and isinstance(args[0], str) else ""
         with self._task_state_lock():
@@ -2612,17 +2641,27 @@ class VoiceController(QObject):
             )
 
             try:
-                self.recorder.start()
-                self._confirmation_recording = True
-                self._acquire_recording()
-                self.state_changed.emit("listening")
-                self.response_changed.emit(
-                    f"Say confirm or cancel, then release {self.shortcut}."
-                )
-                print(
-                    "[Misty] Listening for a spoken confirmation.",
-                    flush=True,
-                )
+                with self._recording_lock:
+                    self.recorder.start()
+                    # A button/timeout can resolve approval while the audio
+                    # device opens. Bind audio only to a still-pending prompt.
+                    if (self._request_cancelled()
+                            or not self._confirmation_broker.is_pending()
+                            or self._confirmation_broker.current_request_id()
+                            != self._confirmation_request_id):
+                        self.recorder.discard()
+                        self._confirmation_request_id = None
+                        return
+                    self._confirmation_recording = True
+                    self._acquire_recording()
+                    self.state_changed.emit("listening")
+                    self.response_changed.emit(
+                        f"Say confirm or cancel, then release {self.shortcut}."
+                    )
+                    print(
+                        "[Misty] Listening for a spoken confirmation.",
+                        flush=True,
+                    )
             except Exception as error:
                 print(
                     f"[Misty] Confirmation recording error: {error}",
