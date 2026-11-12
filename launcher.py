@@ -56,7 +56,7 @@ def main():
             agent.start()
         except Exception as error:
             agent_start_errors.append(error)
-            print(f"[Misty] Qwen preload error: {error}", flush=True)
+            print(f"[Misty] Ministral preload error: {error}", flush=True)
 
     try:
         print("[Misty] Starting desktop interface...", flush=True)
@@ -102,7 +102,7 @@ def main():
                 agent = MistyAgent()
                 agent_start_errors.clear()
 
-                # Load Qwen while the user is speaking.
+                # Load Ministral while the user is speaking.
                 agent_thread = threading.Thread(
                     target=preload_agent,
                     daemon=True,
@@ -171,13 +171,13 @@ def main():
                         print("[Misty] I didn't catch that.", flush=True)
                         continue
 
-                    # Wait for the background Qwen startup to finish.
+                    # Wait for the background Ministral startup to finish.
                     if agent_thread is not None:
                         agent_thread.join()
 
                     if agent_start_errors:
                         print(
-                            "[Misty] Qwen preload failed; "
+                            "[Misty] Ministral preload failed; "
                             "the agent will attempt a normal startup.",
                             flush=True,
                         )
@@ -214,7 +214,7 @@ def main():
                     if transcriber is not None:
                         transcriber.unload()
 
-                    # Also clean up Qwen if transcription failed before
+                    # Also clean up Ministral if transcription failed before
                     # agent.run() had a chance to stop it.
                     if agent_thread is not None:
                         agent_thread.join()

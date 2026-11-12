@@ -6,7 +6,7 @@ Status: proposed; design only. No dependencies installed, runtime replaced, or d
 
 Use the DSH Next computer-use pattern: one driver-owned desktop interface, real image-bearing observations, exact tool schemas, and an iterative model/tool loop. Keep Misty's voice and UI. Do not embed the DSH Electron application or copy its entire TypeScript plugin system.
 
-Preferred controller: the existing local Ministral 3 8B model, acting as the GUI decision-maker rather than a caption generator. Keep text Qwen for ordinary non-GUI requests. Prefer a persistent task-scoped multimodal llama.cpp server if its image API and structured output are proven by an integration test. Do not assume the current vision CLI supports that contract.
+Preferred controller: the existing local Ministral 3 8B model, acting as the GUI decision-maker rather than a caption generator. Keep text Ministral for ordinary non-GUI requests. Prefer a persistent task-scoped multimodal llama.cpp server if its image API and structured output are proven by an integration test. Do not assume the current vision CLI supports that contract.
 
 Preferred provider boundary: a managed, version-pinned Cua `mcp` subprocess using its supported stdio protocol. DSH embeds the native SDK in process; choosing MCP for Python Misty reuses the driver's public contracts while isolating native crashes and avoiding a Node bridge. The exact executable/distribution and Linux support must be verified before selecting a dependency. If no supported Linux transport exists, stop at capability diagnosis rather than silently revive raw-coordinate automation.
 
@@ -157,7 +157,7 @@ The task duration is an admission deadline, not proof an OS/native call is preem
 
 ## 8. Models and spoken approval
 
-Avoid reloading text Qwen between every visual step. After routing, release text reasoning ownership and acquire the visual runtime for the task. Release/unload it on task exit. Task residency reduces load overhead; this requires verified persistent multimodal-server support and sufficient memory, not a promise about current performance.
+Avoid reloading text Ministral between every visual step. After routing, release text reasoning ownership and acquire the visual runtime for the task. Release/unload it on task exit. Task residency reduces load overhead; this requires verified persistent multimodal-server support and sufficient memory, not a promise about current performance.
 
 Before **every** approval or clarification wait, including button-only prompts:
 
@@ -240,4 +240,4 @@ Use explicit settings `desktop_backend = legacy | cua` and `desktop_visual_model
 
 This design does not promise unrestricted autonomous desktop control, perfect semantic verification, hidden-window visibility or platform feature parity. It does not migrate Misty's non-GUI tools or change its default LLM provider to a cloud service.
 
-Before implementation lock-in: establish the real supported Cua executable/Python packaging and exact catalog, KDE Wayland capabilities, multimodal llama.cpp server flags/API/structured-output behavior for the installed Qwen3VL artifacts, and available GPU memory/latency. These require targeted capability tests, not further mock-only assurance. If phase A or C fails, publish the concrete limitation and reconsider the backend/model choice before integrating writes.
+Before implementation lock-in: establish the real supported Cua executable/Python packaging and exact catalog, KDE Wayland capabilities, multimodal llama.cpp server flags/API/structured-output behavior for the installed Ministral 3 8B artifacts, and available GPU memory/latency. These require targeted capability tests, not further mock-only assurance. If phase A or C fails, publish the concrete limitation and reconsider the backend/model choice before integrating writes.

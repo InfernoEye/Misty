@@ -120,8 +120,8 @@ server with a separate API key.
 | Path | Purpose | Size (bytes) |
 | --- | --- | --- |
 | `models/ggml-large-v3-turbo-q5_0.bin` | whisper.cpp speech model | 574,041,195 |
-| `models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf` | planner and vision model | 5,027,784,800 |
-| `models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf` | vision projector | 752,289,728 |
+| `models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf` | planner and vision model | 5,198,911,904 |
+| `models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf` | vision projector | 858,283,168 |
 
 The expected sha256 of each file is in `MANIFEST.lock`; compare after copying
 them in. Playwright's Chromium bundle under `data/playwright-browsers` can be

@@ -1,4 +1,4 @@
-"""Standalone agent runs must also free Qwen before a visual model starts."""
+"""Standalone agent runs must also free Ministral before a visual model starts."""
 import threading
 from types import SimpleNamespace
 import unittest
@@ -31,7 +31,7 @@ class DefaultVisualReleaseTests(unittest.TestCase):
             confirmation_callback=lambda name, arguments, description: (
                 order.append("approval") or name == "kwin_observe"),
         )
-        agent.process = Mock(poll=lambda: None)  # Qwen resident.
+        agent.process = Mock(poll=lambda: None)  # Ministral resident.
         def stop():
             order.append("stop_qwen")
             agent.process = None

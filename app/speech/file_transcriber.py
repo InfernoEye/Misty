@@ -233,7 +233,7 @@ class FileTranscriber:
         self.runner = runner
         #: Optional zero-argument callable run at the top of every
         #: transcribe() call, before ffmpeg starts. The app wires it to
-        #: release the reasoning model so Qwen and whisper never overlap.
+        #: release the reasoning model so Ministral and whisper never overlap.
         self.before_transcribe = None
         self._closed = False
 

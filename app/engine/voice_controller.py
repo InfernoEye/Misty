@@ -40,7 +40,7 @@ MAX_RECORDING_SECONDS = 120.0
 #: Shutdown wait budgets. The Qt thread must never block for long.
 SHUTDOWN_TOTAL_BUDGET_SECONDS = 2.8
 SHUTDOWN_HELPER_BUDGET_MS = 1200
-#: Before whisper runs on RELEASE, the Qwen preload thread is joined for at
+#: Before whisper runs on RELEASE, the Ministral preload thread is joined for at
 #: most this long (the preload keeps running if it is slower).
 PRELOAD_JOIN_SECONDS = 3.0
 
@@ -1370,7 +1370,7 @@ class VoiceController(QObject):
     def set_before_transcribe(self, callback):
         """Install a pre-transcription hook on the file transcriber.
 
-        Wired by the app to release Qwen before whisper.cpp runs, so the two
+        Wired by the app to release Ministral before whisper.cpp runs, so the two
         models never share GPU memory. Safe with no transcriber.
         """
         transcriber = self.file_transcriber
@@ -1538,7 +1538,7 @@ class VoiceController(QObject):
                 self._pending_window_selection_timer = None
 
     def _handle_pending_window_selection(self, transcript):
-        """Resolve a spoken follow-up locally, without asking Qwen."""
+        """Resolve a spoken follow-up locally, without asking Ministral."""
         with self._window_selection_lock:
             pending = self._pending_window_selection
 
@@ -2604,7 +2604,7 @@ class VoiceController(QObject):
             self._worker.start()
 
     def _start_preloads(self):
-        """Start the Whisper and Qwen preloads for one voice request."""
+        """Start the Whisper and Ministral preloads for one voice request."""
         transcriber = self._transcriber_factory()
         self._transcriber = transcriber
         self._preload_epoch += 1
@@ -2658,7 +2658,7 @@ class VoiceController(QObject):
             print(f"[Misty] Ministral preload error: {error}", flush=True)
 
     def _join_preload_before_transcribe(self):
-        """Join the Qwen preload (bounded) before loading Whisper."""
+        """Join the Ministral preload (bounded) before loading Whisper."""
         thread = self._agent_thread
         if thread is None or not thread.is_alive():
             return True
@@ -2675,7 +2675,7 @@ class VoiceController(QObject):
         return True
 
     def unload_reasoning_model(self):
-        """Release Qwen when no request is using it (VLM/file-transcribe hook).
+        """Release Ministral when no request is using it (VLM/file-transcribe hook).
 
         Called synchronously from the tool path (vision inspection, file
         transcription), which runs inside the request body. It therefore
@@ -2942,7 +2942,7 @@ class VoiceController(QObject):
                 self.state_changed.emit("ready")
                 return
 
-            # Qwen's preload is short and happens first, so wait for it
+            # Ministral's preload is short and happens first, so wait for it
             # (bounded) before Whisper loads: both models must not be
             # resident at the same time if the preload is merely slow.
             self._join_preload_before_transcribe()
@@ -3112,7 +3112,7 @@ class VoiceController(QObject):
         )
 
     def _cleanup_models(self, owner=None, join_timeout=PRELOAD_JOIN_SECONDS):
-        """Unload Whisper/Qwen, but only the generation ``owner`` owns.
+        """Unload Whisper/Ministral, but only the generation ``owner`` owns.
 
         ``owner`` is the agent created for the calling request (``None`` for
         the microphone-start failure path). Cleanup never joins preload
