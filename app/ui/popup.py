@@ -232,8 +232,19 @@ class MistyPopup(QWidget):
         confirmation_buttons.addWidget(self.cancel_button)
         confirmation_buttons.addWidget(self.confirm_button)
 
+        confirmation_scroll = QScrollArea()
+        confirmation_scroll.setObjectName("confirmationScroll")
+        confirmation_scroll.setWidgetResizable(True)
+        confirmation_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        confirmation_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        confirmation_scroll.setMaximumHeight(220)
+        confirmation_scroll.setWidget(self.confirmation_description)
+        self.confirmation_scroll = confirmation_scroll
+
         confirmation_layout.addWidget(self.confirmation_title)
-        confirmation_layout.addWidget(self.confirmation_description)
+        confirmation_layout.addWidget(confirmation_scroll)
         confirmation_layout.addLayout(confirmation_buttons)
 
         layout.addWidget(self.confirmation_card)
@@ -351,6 +362,15 @@ class MistyPopup(QWidget):
         self.set_state("confirmation")
         self.adjustSize()
         self.show_popup()
+        QTimer.singleShot(0, self._fit_confirmation_scroll)
+
+    def _fit_confirmation_scroll(self):
+        scroll = self.confirmation_scroll
+        needed = self.confirmation_description.heightForWidth(
+            scroll.viewport().width()
+        )
+        scroll.setFixedHeight(min(needed, 220))
+        self.adjustSize()
 
     def set_confirmation_busy(self):
         self.confirm_button.setEnabled(False)
@@ -558,7 +578,14 @@ class MistyPopup(QWidget):
                 font-weight: 800;
             }
 
+            QScrollArea#confirmationScroll,
+            QScrollArea#confirmationScroll > QWidget {
+                background-color: transparent;
+                border: none;
+            }
+
             QLabel#confirmationDescription {
+                background-color: transparent;
                 color: #EDF0F8;
                 font-size: 12px;
             }

@@ -721,16 +721,14 @@ class MistyApplication(QObject):
             title = f"Close {target.get('title') or 'this window'}?"
             app_id = str(target.get("app_id") or "Unknown application")
             description = (
-                f"Application: {app_id}\\n\\n"
+                f"Application: {app_id}\n\n"
                 "Closing may interrupt work or cause unsaved changes "
                 "to be lost. Misty will request closure; the application "
                 "may still prevent it."
             )
         else:
-            details = json.dumps(arguments, ensure_ascii=False, indent=2)
-            description = (
-                f"{description}\\n\\nAction: {name}\\n{details}"
-            )
+            details = json.dumps(arguments, ensure_ascii=False)
+            description = f"{description}\n\nAction: {name} {details}"
 
         sent = self.popup_server.send({
             "type": "confirmation",
