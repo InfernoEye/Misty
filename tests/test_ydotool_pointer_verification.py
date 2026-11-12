@@ -2,6 +2,7 @@ import unittest
 
 from app.desktop.input import pointer_click, pointer_move
 from app.desktop.ydotool_backend import YdotoolBackend
+from test_ydotool_backend import TEST_LOG
 
 
 class SimulatedPointer:
@@ -40,6 +41,7 @@ def backend(pointer, **overrides):
         access=lambda path, mode: True,
         runner=pointer.runner,
         cursor_reader=pointer.cursor,
+        log_path=TEST_LOG,
     )
     options.update(overrides)
     return YdotoolBackend(**options)

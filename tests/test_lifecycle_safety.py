@@ -744,7 +744,7 @@ class ModelOrderTests(unittest.TestCase):
         self.assertEqual(calls, ["qwen"])
         self.assertEqual(order, ["file-whisper"])
 
-    def test_vision_hook_runs_before_ocr_and_vlm(self):
+    def test_vision_runs_capture_ocr_vlm_without_releasing_planner(self):
         from app.desktop.vision.coordinator import DesktopVision
 
         calls = []
@@ -767,31 +767,9 @@ class ModelOrderTests(unittest.TestCase):
                 calls.append("vlm")
                 return object()
 
-        vision = DesktopVision(
-            Capture(), Ocr(), Vlm(),
-            before_analyze=lambda: calls.append("qwen-release"),
-        )
-        vision.inspect()
+        DesktopVision(Capture(), Ocr(), Vlm()).inspect()
 
-        self.assertEqual(
-            calls, ["capture", "qwen-release", "ocr", "vlm"]
-        )
-
-    def test_vlm_service_hook_installed_by_coordinator(self):
-        from app.desktop.vision.coordinator import DesktopVision
-
-        installed = []
-
-        class Vlm:
-            def set_before_analyze(self, callback):
-                installed.append(callback)
-
-        vision = DesktopVision(object(), object(), Vlm())
-        callback = lambda: None
-        vision.set_before_analyze(callback)
-
-        self.assertIs(vision.before_analyze, callback)
-        self.assertEqual(installed, [callback])
+        self.assertEqual(calls, ["capture", "ocr", "vlm"])
 
     def test_file_transcriber_hook_failure_never_breaks_transcription(self):
         from app.speech import file_transcriber

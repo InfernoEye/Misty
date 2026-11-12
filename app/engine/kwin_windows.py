@@ -846,6 +846,86 @@ callDBus(
                 "message": f"Could not list KDE windows: {error}",
             }
 
+    def _run_script_for_reply(self, script, request_id, timeout):
+        """Load a one-shot KWin script, run it, and return the Receive payload."""
+        plugin_name = f"misty-query-{request_id}"
+        future = concurrent.futures.Future()
+        with self._pending_lock:
+            self._pending[request_id] = future
+
+        script_path = None
+        loaded = False
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".js",
+                prefix="misty-kwin-",
+                delete=False,
+            ) as file:
+                file.write(script)
+                script_path = Path(file.name)
+
+            script_id = self._qdbus(
+                "org.kde.KWin",
+                "/Scripting",
+                "org.kde.kwin.Scripting.loadScript",
+                str(script_path),
+                plugin_name,
+            )
+            if not script_id:
+                raise RuntimeError("KWin did not return a script ID.")
+            loaded = True
+
+            self._qdbus(
+                "org.kde.KWin",
+                f"/Scripting/Script{script_id}",
+                "org.kde.kwin.Script.run",
+            )
+            return future.result(timeout=timeout)
+        finally:
+            with self._pending_lock:
+                self._pending.pop(request_id, None)
+
+            if loaded:
+                try:
+                    self._qdbus(
+                        "org.kde.KWin",
+                        "/Scripting",
+                        "org.kde.kwin.Scripting.unloadScript",
+                        plugin_name,
+                    )
+                except Exception:
+                    pass
+
+            if script_path is not None:
+                script_path.unlink(missing_ok=True)
+
+    def cursor_position(self):
+        """Read the real pointer position from KWin; moves nothing."""
+        if self._startup_error:
+            raise RuntimeError(
+                f"KDE window service is unavailable: {self._startup_error}"
+            )
+        if self._thread is None or not self._thread.is_alive():
+            self.start()
+
+        request_id = uuid.uuid4().hex
+        script = f"""
+var pos = workspace.cursorPos;
+callDBus(
+    "{BUS_NAME}",
+    "{OBJECT_PATH}",
+    "{INTERFACE}",
+    "Receive",
+    "{request_id}",
+    JSON.stringify({{x: Math.round(pos.x), y: Math.round(pos.y)}}),
+    function(reply) {{}}
+);
+"""
+        data = json.loads(self._run_script_for_reply(script, request_id, 5))
+        return int(data["x"]), int(data["y"])
+
     def list_screens(self):
         """Return the currently connected KWin outputs and their geometries."""
         try:
@@ -932,6 +1012,22 @@ callDBus(
             "success": True,
             "message": "Previous active application snapshot retrieved.",
             "active_window": dict(active),
+        }
+
+    def live_active_window(self):
+        """Return the window that has keyboard focus right now, never a snapshot."""
+        try:
+            active = self._query().get("active_window")
+        except Exception as error:
+            return {
+                "success": False,
+                "message": f"Could not read the focused window: {error}",
+                "active_window": None,
+            }
+        return {
+            "success": True,
+            "message": "Read the focused window.",
+            "active_window": active,
         }
 
     def get_active_window(self):

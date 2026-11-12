@@ -1,9 +1,11 @@
-"""Local Qwen tool-calling agent for Misty."""
+"""Local tool-calling agent for Misty, backed by the Qwen3-VL 8B server."""
 
 import json
 import os
 import re
+import threading
 from collections.abc import Mapping
+from contextlib import contextmanager
 from datetime import datetime
 import subprocess
 import time
@@ -12,6 +14,7 @@ import uuid
 import urllib.request
 from pathlib import Path
 
+from app.brain.server_lock import SHARED_SERVER_LOCK
 from app.brain.tools import TOOL_DEFINITIONS, ToolRegistry
 from app.brain.direct_actions import (
     resolve_conversational_reply,
@@ -45,7 +48,11 @@ LLAMA_SERVER = Path(os.environ.get(
 ))
 MODEL_PATH = Path(os.environ.get(
     "MISTY_MODEL_PATH",
-    PROJECT_DIR / "models/Qwen3-4B-Q4_K_M.gguf",
+    PROJECT_DIR / "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+))
+PROJECTOR_PATH = Path(os.environ.get(
+    "MISTY_PROJECTOR_PATH",
+    PROJECT_DIR / "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf",
 ))
 
 HOST = os.environ.get("MISTY_LLAMA_HOST", "127.0.0.1")
@@ -57,6 +64,7 @@ BASE_URL = f"http://{HOST}:{PORT}"
 MAX_TOOL_ROUNDS = 5
 #: Rounds and wall-clock budget for one desktop task (one action per round).
 DESKTOP_TASK_MAX_ROUNDS = 8
+IDLE_UNLOAD_SECONDS = 30
 DESKTOP_TASK_BUDGET_SECONDS = 180.0
 STARTUP_TIMEOUT = 90
 REQUEST_TIMEOUT = 60
@@ -160,6 +168,7 @@ LAUNCH_TOOL_NAMES = frozenset({
     "open_browser",
     "open_app",
     "launch_app",
+    "pick_window",
 })
 
 # Private-topic words that make a model clarification/summary clause sensitive.
@@ -395,6 +404,12 @@ CONTROL_REQUEST_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+CONTROL_ACTION_PATTERN = re.compile(
+    r"\b(?:click|press|tap|select|choose|open|activate|"
+    r"klikn\w*|kliknij\w*|naci[sś]nij\w*|wybierz)\b",
+    re.IGNORECASE,
+)
+
 VISUAL_APPEARANCE_PATTERN = re.compile(
     r"\b(?:looks? like|appearance|screenshot|visually|wygl[aą]d\w*)\b",
     re.IGNORECASE,
@@ -601,6 +616,24 @@ def _tool_accuracy_for(definitions):
 
 
 
+_CLARIFICATION_REWRITE_SYSTEM = (
+    "You rewrite a request after the user corrected one word. Return JSON only: "
+    '{"request": "<the original request with ONLY the misheard word replaced by '
+    'the corrected word>"}. Keep everything else exactly as written.'
+)
+
+
+def parse_clarified_request(content):
+    """Return the rewritten request, or None when the model reply is unusable."""
+    try:
+        rewritten = json.loads(content or "{}").get("request")
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if isinstance(rewritten, str) and rewritten.strip():
+        return rewritten.strip()
+    return None
+
+
 def _guessed_arguments(plan, transcript):
     """Plan steps whose arguments look invented (see app.brain.accuracy)."""
     from app.brain.accuracy import suspicious_steps
@@ -721,6 +754,11 @@ Tool routing:
 - To delete something, use trash_path, which moves it to local quarantine
   instead of permanently deleting it. Never claim permanent deletion.
 - Moving, copying, and renaming files between folders are not supported.
+- To open or launch an application, first call list_installed_apps with the
+  name the user gave, then pass the exact returned id to launch_app. Never
+  guess an application id. If the listed applications do not clearly match
+  the name the user said, do not launch anything: return an empty steps list
+  with a clarification that names what was not found.
 - Do not open or launch an application merely to inspect it. Use
   list_windows and inspect_screen for an application that is already
   running unless the user explicitly asks to open it.
@@ -836,15 +874,47 @@ class MistyAgent:
         self.content_selection_callback = content_selection_callback
         # The request owner synchronously releases reasoning/held leases before
         # native visual inference or approval; standalone pilots may use stop().
-        # Standalone runs (without the voice controller) still release Qwen
+        # Standalone runs (without the voice controller) still release the model
         # before the native visual pilot loads its own model.
         self.before_visual_callback = (
             before_visual_callback if callable(before_visual_callback) else self.stop)
         self.process = None
         self.log_file = None
+        self._task_held = False
+        self._idle_timer = None
+        self._idle_lock = threading.Lock()
         # Shutdown may set this to cooperate with an in-flight run. It is
         # never cleared here so a cancelled agent stays cancelled.
         self.cancel_event = None
+
+    @property
+    def task_held(self):
+        return self._task_held
+
+    @contextmanager
+    def hold(self):
+        """Keep the planner loaded for the whole task, then unload when idle.
+
+        Steps inside the block do not unload the model. On exit the unload is
+        scheduled after ``IDLE_UNLOAD_SECONDS`` and cancelled if another task
+        starts first.
+        """
+        with self._idle_lock:
+            self._cancel_idle_timer()
+            self._task_held = True
+        try:
+            yield self
+        finally:
+            with self._idle_lock:
+                self._task_held = False
+                self._idle_timer = threading.Timer(IDLE_UNLOAD_SECONDS, self.stop)
+                self._idle_timer.daemon = True
+                self._idle_timer.start()
+
+    def _cancel_idle_timer(self):
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
 
     @staticmethod
     def split_request_clauses(transcript):
@@ -1042,6 +1112,30 @@ class MistyAgent:
             "status": "planned",
         })
         return message
+
+    def _clarified_request(self, pending, answer):
+        """Rewrite the original request with the user's correction applied.
+
+        The planner cannot recover from a misheard target while the misheard
+        word is still in the request, so the model applies the correction
+        first. If the rewrite fails, the answer is planned as given.
+        """
+        user = json.dumps({
+            "original_request": pending["original_request"],
+            "question_asked": pending["clarification_question"],
+            "user_correction": answer,
+        }, ensure_ascii=False)
+        try:
+            message = self._chat(
+                [
+                    {"role": "system", "content": _CLARIFICATION_REWRITE_SYSTEM},
+                    {"role": "user", "content": user},
+                ],
+                tools=[], response_format={"type": "json_object"},
+            )
+        except (RuntimeError, OSError):
+            return answer
+        return parse_clarified_request(message.get("content")) or answer
 
     @staticmethod
     def _has_pending_clarification(context):
@@ -1515,7 +1609,7 @@ class MistyAgent:
         report = None
         # One approval for the whole task: inside this block the desktop
         # tools run without asking again, and the grant dies with it.
-        with TaskGrant(transcript) as grant:
+        with TaskGrant(transcript) as grant, self.hold():
             registry.task_grant = grant
             try:
                 report = run_desktop_task(
@@ -2341,6 +2435,7 @@ class MistyAgent:
 
         if (
             CONTROL_REQUEST_PATTERN.search(transcript)
+            and not CONTROL_ACTION_PATTERN.search(transcript)
             and not VISUAL_APPEARANCE_PATTERN.search(transcript)
         ):
             blocked.add("inspect_screen")
@@ -2356,11 +2451,14 @@ class MistyAgent:
         if not LLAMA_SERVER.is_file():
             raise FileNotFoundError(f"llama-server not found: {LLAMA_SERVER}")
         if not MODEL_PATH.is_file():
-            raise FileNotFoundError(f"Qwen model not found: {MODEL_PATH}")
+            raise FileNotFoundError(f"Vision-language model not found: {MODEL_PATH}")
+        if not PROJECTOR_PATH.is_file():
+            raise FileNotFoundError(f"Vision projector not found: {PROJECTOR_PATH}")
 
         return [
             str(LLAMA_SERVER),
             "-m", str(MODEL_PATH),
+            "--mmproj", str(PROJECTOR_PATH),
             "-ngl", GPU_LAYERS,
             "-c", CONTEXT_SIZE,
             "-n", "8192",
@@ -2382,7 +2480,7 @@ class MistyAgent:
         log_dir.mkdir(exist_ok=True)
         self.log_file = open(log_dir / "llama-server.log", "a", encoding="utf-8")
 
-        print("[Misty] Starting local Qwen model...", flush=True)
+        print("[Misty] Starting local vision-language model...", flush=True)
         self.process = subprocess.Popen(
             command,
             cwd=PROJECT_DIR / "third_party/llama.cpp",
@@ -2408,19 +2506,19 @@ class MistyAgent:
                 request = urllib.request.Request(f"{BASE_URL}/health")
                 with urllib.request.urlopen(request, timeout=2) as response:
                     if response.status == 200:
-                        print("[Misty] Qwen model is ready.", flush=True)
+                        print("[Misty] Vision-language model is ready.", flush=True)
                         return
             except (OSError, urllib.error.URLError):
                 time.sleep(0.25)
 
         self.stop()
         raise TimeoutError(
-            "Qwen server did not become ready in time. "
+            "Local model server did not become ready in time. "
             "Check logs/llama-server.log."
         )
 
     def ensure_reasoning_ready(self):
-        """Ensure Qwen is available, including after a vision observation.
+        """Ensure the model is available, including after a vision observation.
 
         Vision may synchronously release this agent's reasoning process to
         make room for the visual model. Do not rely on voice preloading or
@@ -2456,12 +2554,12 @@ class MistyAgent:
             method="POST",
         )
 
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+        with SHARED_SERVER_LOCK, urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
             result = json.loads(response.read().decode("utf-8"))
 
         choices = result.get("choices", [])
         if not choices:
-            raise RuntimeError("Qwen returned no response choices.")
+            raise RuntimeError("The local model returned no response choices.")
 
         return choices[0]["message"]
 
@@ -2614,7 +2712,11 @@ class MistyAgent:
             )
 
             planning_data = {
-                "user_request": transcript.strip(),
+                "user_request": (
+                    self._clarified_request(pending_clarification, transcript.strip())
+                    if pending_clarification is not None
+                    else transcript.strip()
+                ),
                 "current_time": datetime.now().astimezone().isoformat(),
                 "available_tools": tool_definitions,
                 "tool_accuracy": _tool_accuracy_for(tool_definitions),
@@ -2636,11 +2738,11 @@ class MistyAgent:
                 )
                 raw_plan = planning_message.get("content")
                 if not isinstance(raw_plan, str) or not raw_plan.strip():
-                    raise PlanValidationError("Qwen returned an empty task plan.")
+                    raise PlanValidationError("The local model returned an empty task plan.")
                 try:
                     structured_plan = json.loads(raw_plan)
                 except json.JSONDecodeError as error:
-                    raise PlanValidationError(f"Qwen returned invalid plan JSON: {error}") from error
+                    raise PlanValidationError(f"The local model returned invalid plan JSON: {error}") from error
 
             # Validate structure before any window lookup, so a file-move or
             # other non-window request can never be reinterpreted as a window
@@ -3288,7 +3390,8 @@ class MistyAgent:
             print(f"[Misty] Agent error: {error}", flush=True)
             return "I ran into a problem while processing that request."
         finally:
-            self.stop()
+            if not self._task_held:
+                self.stop()
             if request_id is not None and self.task_journal is not None:
                 try:
                     self.task_journal.finish_task(
@@ -3301,7 +3404,7 @@ class MistyAgent:
         """Stop the model server so its GPU memory is released."""
         if self.process is not None:
             if self.process.poll() is None:
-                print("[Misty] Unloading Qwen model...", flush=True)
+                print("[Misty] Unloading vision-language model...", flush=True)
                 self.process.terminate()
                 try:
                     self.process.wait(timeout=10)
@@ -3315,4 +3418,4 @@ class MistyAgent:
             self.log_file.close()
             self.log_file = None
 
-        print("[Misty] Qwen server stopped.", flush=True)
+        print("[Misty] Local model server stopped.", flush=True)

@@ -28,6 +28,7 @@ from app.desktop.context import DesktopContext
 from app.desktop.vision.capture import CaptureService
 from app.desktop.vision.kwin_capture import KWinWindowCapture
 from app.desktop.vision.ocr import OCRService
+from app.brain.agent import BASE_URL, MODEL_PATH
 from app.desktop.vision.vlm import VisionLanguageService
 from app.desktop.vision.coordinator import DesktopVision
 from app.engine.audit_log import AuditLog, TaskJournal
@@ -117,7 +118,10 @@ class MistyApplication(QObject):
                 kwin_capture=KWinWindowCapture(),
             ),
             ocr_service=OCRService(),
-            vlm_service=VisionLanguageService(),
+            vlm_service=VisionLanguageService(
+                base_url=BASE_URL,
+                model_name=MODEL_PATH.name,
+            ),
         )
         self.clipboard_bridge = ClipboardBridge(parent=self.app)
         try:
@@ -221,8 +225,6 @@ class MistyApplication(QObject):
                 print(f"[Misty] Model arbiter setup error: {error}", flush=True)
         if callable(unload_reasoning):
             self.voice_controller.set_before_transcribe(unload_reasoning)
-            if hasattr(self.vision_service, "set_before_analyze"):
-                self.vision_service.set_before_analyze(unload_reasoning)
         self.voice_controller.activity_event.connect(
             self.main_window.add_activity_event
         )

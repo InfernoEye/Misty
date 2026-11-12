@@ -2,7 +2,7 @@
 
 Misty is a local desktop assistant for KDE Plasma on Linux. Hold a key, speak
 in English or Polish, and Misty transcribes the request, plans a short sequence
-of tool calls with a local Qwen model, executes them, and shows a summary. No
+of tool calls with a local Qwen3-VL 8B model, executes them, and shows a summary. No
 account, cloud API key, or remote model is involved; everything runs on the
 machine (see [Privacy model](#privacy-model)).
 
@@ -28,8 +28,9 @@ sources the research tool actually retrieved; see [research quality](docs/RESEAR
    (`app/speech/recorder.py`), bounded in length.
 3. **Whisper** — the WAV goes to `third_party/whisper.cpp/build/bin/whisper-cli`
    with `models/ggml-large-v3-turbo-q5_0.bin`.
-4. **Planner** — `app/brain/agent.py` starts `llama-server` on demand
-   (`models/Qwen3-4B-Q4_K_M.gguf`, Vulkan) and asks for one JSON plan
+4. **Planner** — `app/brain/agent.py` starts one shared `llama-server` on demand
+   (`models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` with its
+   projector, Vulkan) and asks for one JSON plan
    (`response_format: json_object`), validated by `app/brain/planner.py`.
    At most one read-only recovery round follows a failure. The files under
    `config/grammars/` are reference grammars for the tool-call shape; no Python
@@ -108,16 +109,19 @@ cmake -S kde-shortcut -B kde-shortcut/build
 cmake --build kde-shortcut/build -j
 ```
 
-The VLM is used through `llama-mtmd-cli` from the llama.cpp build.
+Vision uses the same shared `llama-server` as the planner: screen images are
+sent to it over HTTP, so the 8B model is loaded once and never reloaded per
+image. Planner and vision requests take one lock, because the server runs a
+single slot. The KWin native pilot is the exception: it runs its own isolated
+server with a separate API key.
 
 ### 4. Models (not shipped, not downloadable by Misty)
 
 | Path | Purpose | Size (bytes) |
 | --- | --- | --- |
-| `models/Qwen3-4B-Q4_K_M.gguf` | planner | 2,497,280,256 |
 | `models/ggml-large-v3-turbo-q5_0.bin` | whisper.cpp speech model | 574,041,195 |
-| `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` | VLM | 5,027,784,800 |
-| `models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf` | VLM projector | 752,289,728 |
+| `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` | planner and vision model | 5,027,784,800 |
+| `models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf` | vision projector | 752,289,728 |
 
 The expected sha256 of each file is in `MANIFEST.lock`; compare after copying
 them in. Playwright's Chromium bundle under `data/playwright-browsers` can be
@@ -183,7 +187,8 @@ Runtime settings are constants and environment variables:
 | Variable | Default |
 | --- | --- |
 | `MISTY_LLAMA_SERVER` | `third_party/llama.cpp/build/bin/llama-server` |
-| `MISTY_MODEL_PATH` | `models/Qwen3-4B-Q4_K_M.gguf` |
+| `MISTY_MODEL_PATH` | `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` |
+| `MISTY_PROJECTOR_PATH` | `models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf` |
 | `MISTY_LLAMA_HOST` / `MISTY_LLAMA_PORT` | `127.0.0.1` / `9931` |
 | `MISTY_LLAMA_GPU_LAYERS` | `99` |
 | `MISTY_LLAMA_CONTEXT` | `32768` |

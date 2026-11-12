@@ -38,14 +38,6 @@
   "generated_by": "scripts/check_deps.py --write-lock",
   "models": [
     {
-      "component": "reasoning",
-      "mtime_utc": "2026-11-09T14:44:10Z",
-      "path": "models/Qwen3-4B-Q4_K_M.gguf",
-      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
-      "sha256_status": "computed",
-      "size_bytes": 2497280256
-    },
-    {
       "component": "speech",
       "mtime_utc": "2026-11-09T14:26:40Z",
       "path": "models/ggml-large-v3-turbo-q5_0.bin",
@@ -54,7 +46,7 @@
       "size_bytes": 574041195
     },
     {
-      "component": "vision",
+      "component": "reasoning",
       "mtime_utc": "2026-11-10T09:44:16Z",
       "path": "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf",
       "sha256": "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
@@ -302,11 +294,11 @@
     }
   ],
   "python_distributions_summary": {
-    "full_list_sha256": "717d41bdbbf7f305ed3ac0a43ba8520f81565f1f092475e8667c9c3f8d12857e",
+    "full_list_sha256": "06d6331d0e82ab0e58fb4040d423d7e558c90842064ca46330ca055d73ced277",
     "system_distributions": 225,
-    "total_distributions": 239,
-    "total_unique_names": 234,
-    "venv_distributions": 14
+    "total_distributions": 240,
+    "total_unique_names": 235,
+    "venv_distributions": 15
   },
   "requirements_pins": [
     {
@@ -370,7 +362,7 @@
       "commit": "a4d4f2fd4ec85ec6a0a9ece4870416c1b6cc24f5",
       "name": "llama.cpp",
       "path": "third_party/llama.cpp",
-      "role": "llama-server (planner) and llama-mtmd-cli (VLM)"
+      "role": "llama-server (shared planner and vision model)"
     },
     {
       "artifacts": [
@@ -386,5 +378,5 @@
     }
   ],
   "verification_run": "2026-11-10",
-  "verified_at": "2026-11-10T16:31:17Z"
+  "verified_at": "2026-11-12T00:00:25Z"
 }

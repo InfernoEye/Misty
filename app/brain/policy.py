@@ -435,7 +435,7 @@ _BASELINE_SPECIFICATIONS = {
     "open_app": _spec(
         "launch", "low", "Launch an approved desktop application",
         arguments_affect_risk=True,
-        note="The application is restricted to the approved application list.",
+        note="Only a desktop entry discovered as installed can be launched.",
     ),
     "media_list_players": _spec(
         "read_only", "low", "List local MPRIS media players",
@@ -645,6 +645,10 @@ _BASELINE_SPECIFICATIONS = {
         "launch", "medium", "Launch an installed desktop application",
         arguments_affect_risk=True,
         note="Any installed desktop entry can be started in the background.",
+    ),
+    "pick_window": _spec(
+        "window_control", "low", "Choose which open window typing goes to",
+        note="Sets the typing target only; nothing is typed or sent.",
     ),
     # -- System state ----------------------------------------------------
     "volume_up": _spec(

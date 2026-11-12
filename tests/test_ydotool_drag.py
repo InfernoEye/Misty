@@ -1,7 +1,7 @@
 import unittest
 
 from app.desktop.ydotool_backend import YdotoolBackend
-from test_ydotool_backend import FakeRunner, PerfectCursor, UINPUT_PATH, _Completed
+from test_ydotool_backend import FakeRunner, PerfectCursor, TEST_LOG, UINPUT_PATH, _Completed
 
 PRESS = "0x40"
 RELEASE = "0x80"
@@ -14,6 +14,7 @@ def backend(runner, cursor_reader):
         exists=lambda path: path == UINPUT_PATH,
         access=lambda path, mode: True,
         cursor_reader=cursor_reader,
+        log_path=TEST_LOG,
     )
 
 

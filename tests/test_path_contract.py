@@ -330,6 +330,25 @@ class PathContractUnitTests(unittest.TestCase):
                         path_contract.approved_base(resolver, bad)
                     self.assertEqual(ctx.exception.code, "invalid_folder")
 
+    def test_approved_base_reports_the_resolver_reason(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp) / "home"
+            outside = Path(temp) / "elsewhere"
+            home.mkdir()
+            outside.mkdir()
+            resolver = UserFolderResolver(
+                home=home, folder_paths={"Docs": str(outside)}
+            )
+            with self.assertRaises(path_contract.PathContractError) as ctx:
+                path_contract.approved_base(
+                    resolver, "Docs", enforce_home=True
+                )
+            self.assertEqual(ctx.exception.code, "invalid_folder")
+            self.assertEqual(
+                ctx.exception.message,
+                "The approved folder resolves outside the home directory.",
+            )
+
     def test_parent_chain(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)

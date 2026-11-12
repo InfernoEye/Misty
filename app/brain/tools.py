@@ -15,6 +15,15 @@ from app.brain import egress as egress_policy
 from app.brain.policy import requires_confirmation as policy_requires_confirmation
 from app.brain.policy import requires_confirmation_for as policy_requires_confirmation_for
 from app.desktop.accessibility.inspector import AccessibilityInspector
+from app.desktop.app_windows import choose_target, windows_of_app
+from app.desktop.focus_target import (
+    SnapshotBackend,
+    focused_control_is_editable,
+    focused_control_text,
+    typed_text_landed,
+    typing_refusal,
+)
+from app.desktop.launch_window import window_in_session
 from app.desktop.accessibility.selection import (
     SelectionReadError,
     SelectionReader,
@@ -90,13 +99,16 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "open_app",
-            "description": "Launch an approved desktop application.",
+            "description": (
+                "Launch an installed desktop application by its name, as the "
+                "user would say it (for example 'Dolphin' or 'Firefox')."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "app": {
                         "type": "string",
-                        "enum": APPLICATIONS_ALLOWED
+                        "description": "Name of an installed application.",
                     }
                 },
                 "required": ["app"],
@@ -481,7 +493,8 @@ TOOL_DEFINITIONS.extend([
             "description": (
                 "Discover installed graphical desktop applications. "
                 "Can optionally search by application name or description. "
-                "Returns desktop application IDs suitable for launch_app."
+                "Returns desktop application IDs suitable for launch_app in "
+                "the 'applications' list, each item with an 'id' field."
             ),
             "parameters": {
                 "type": "object",
@@ -497,6 +510,27 @@ TOOL_DEFINITIONS.extend([
                         "description": "Maximum number of results. Defaults to 40."
                     }
                 },
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pick_window",
+            "description": (
+                "Set the window that typing goes to. Use the exact window id "
+                "the user chose from a choose_window result."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "window_id": {
+                        "type": "string",
+                        "description": "Exact window id from a choose_window result."
+                    }
+                },
+                "required": ["window_id"],
                 "additionalProperties": False
             }
         }
@@ -2316,7 +2350,10 @@ DESKTOP_TYPE_TEXT_DEFINITION = {
             "Type text into whatever control currently has keyboard focus. "
             "Click or focus the field first. Never type a password, card "
             "number, or anything the user did not give you. This sends the "
-            "text only; it presses no key, so nothing is submitted."
+            "text only; it presses no key, so nothing is submitted. The result "
+            "reports verified: true when the field's text grew by exactly the "
+            "typed text, false when it did not, and null when it could not be "
+            "read. Check it before reporting that the text was typed."
         ),
         "parameters": {
             "type": "object",
@@ -2903,6 +2940,7 @@ class ToolRegistry:
         # injected backend; with none configured the tools are unavailable
         # and are not advertised at all.
         self.input_backend = input_backend
+        self._launch_target = None
         self.selection_replacement_service = (
             selection_replacement_service
             or SelectionReplacementService(
@@ -3077,6 +3115,9 @@ class ToolRegistry:
                     return self._desktop_error(
                         "invalid_arguments", "Text is required."
                     )
+                guard_error = self._focus_guard_error()
+                if guard_error is not None:
+                    return guard_error
                 action = type_text(text)
             elif name == "desktop_scroll":
                 dy = arguments.get("dy")
@@ -3146,8 +3187,15 @@ class ToolRegistry:
                 "invalid_arguments", f"That action was rejected: {error}"
             )
 
+        if action.kind == "type_text":
+            target_pid = self._launch_target["pid"]
+            backend = SnapshotBackend(
+                backend, lambda: focused_control_text(target_pid)
+            )
         result = DesktopInput(
-            backend, timeout=PASTE_TIMEOUT_SECONDS
+            backend,
+            verifier=typed_text_landed,
+            timeout=PASTE_TIMEOUT_SECONDS,
         ).execute(action)
         if not isinstance(result, dict):
             return self._desktop_error("failed", "The action failed.")
@@ -3156,6 +3204,7 @@ class ToolRegistry:
             return {
                 "success": True,
                 "code": "done",
+                "verified": result.get("verified"),
                 "message": f"{name} completed.",
             }
         return {
@@ -6390,6 +6439,14 @@ class ToolRegistry:
 
             return self.executor.list_installed_apps(query, limit)
 
+        if name == "pick_window":
+            if set(arguments) != {"window_id"}:
+                return {"success": False, "message": "Invalid pick_window arguments."}
+            window_id = arguments["window_id"]
+            if not isinstance(window_id, str) or not window_id:
+                return {"success": False, "message": "A valid window_id is required."}
+            return self._pick_typing_window(window_id)
+
         if name == "launch_app":
             if set(arguments) != {"app_id"}:
                 return {"success": False, "message": "Invalid launch_app arguments."}
@@ -6398,7 +6455,95 @@ class ToolRegistry:
             if not isinstance(app_id, str) or not app_id:
                 return {"success": False, "message": "A valid app_id is required."}
 
-            return self.executor.launch_app(app_id)
+            running = self._running_windows(app_id)
+            if running is None:
+                return {"success": False, "message": "Could not read open windows."}
+            state, candidates = choose_target(running)
+            if state == "one":
+                self._launch_target = candidates[0]
+                return {"success": True, "message": "Focusing the open window."}
+            if state == "choose":
+                self._launch_target = None
+                return {
+                    "success": False,
+                    "code": "choose_window",
+                    "message": "Several windows are open. Ask the user which one to use.",
+                    "windows": [
+                        {"id": w["id"], "pid": w["pid"], "title": w.get("title", "")}
+                        for w in candidates
+                    ],
+                }
+            result = self.executor.launch_app(app_id)
+            if result.get("success"):
+                self._launch_target = self._target_window(result.get("session_id"))
+            return result
 
         return {"success": False, "message": "Unknown tool. Nothing was executed."}
+
+    def _window_service(self):
+        return self.executor.window_service
+
+    def _running_windows(self, app_id):
+        service = self._window_service()
+        if service is None:
+            return None
+        listing = service.list_windows()
+        if not listing.get("success"):
+            return None
+        return windows_of_app(listing["windows"], app_id)
+
+    def _pick_typing_window(self, window_id):
+        service = self._window_service()
+        listing = service.list_windows() if service is not None else {"success": False}
+        if not listing.get("success"):
+            return self._desktop_error("no_target_window", "Could not read open windows.")
+        window = next((w for w in listing["windows"] if w["id"] == window_id), None)
+        if window is None:
+            return self._desktop_error(
+                "no_target_window", "That window is not open. Nothing was typed."
+            )
+        self._launch_target = window
+        return {"success": True, "message": "Typing target set."}
+
+    def _target_window(self, session_id):
+        service = self._window_service()
+        if service is None or not session_id:
+            return None
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            listing = service.list_windows()
+            if not listing.get("success"):
+                return None
+            window = window_in_session(listing["windows"], session_id)
+            if window is not None:
+                return window
+            time.sleep(0.25)
+        return None
+
+    def _focus_guard_error(self):
+        """Focus the launch target, then refuse unless it can take text."""
+        target = self._launch_target
+        service = self._window_service()
+        if target is None or service is None:
+            return self._desktop_error(
+                "no_target_window",
+                "No launched window is known to type into. Nothing was typed.",
+            )
+        focus = service.control_window("focus", target["id"])
+        if not focus.get("success"):
+            return self._desktop_error("focus_failed", focus["message"])
+        focused = service.live_active_window()
+        if not focused.get("success"):
+            return self._desktop_error("focus_unknown", focused["message"])
+        active = focused["active_window"]
+        focused_id = active.get("id") if active else None
+        editable = focused_id == target["id"] and focused_control_is_editable(
+            target["pid"]
+        )
+        refusal = typing_refusal(target["id"], focused_id, editable)
+        if refusal is None:
+            return None
+        return self._desktop_error(
+            refusal, f"Typing refused ({refusal}). Nothing was typed."
+        )
 
