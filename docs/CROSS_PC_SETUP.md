@@ -181,7 +181,9 @@ capability gate separately.
 
 `misty.py` is the supported entry point (sets the Qt/Wayland environment,
 enforces a single instance). In a KDE Plasma/Wayland session, hold the
-shortcut (default `Launch (5)`) and speak in English or Polish.
+shortcut (default `F8`; the tracked `config/shortcut.json` sets `Launch (5)`, so
+change it in Settings → Voice if you want F8) and speak in English or Polish.
+Press Escape during a task to cancel it.
 
 ## 9. Access and collaboration notes
 
