@@ -63,7 +63,8 @@ Native typing/insertion stays opt-in: `ydotool` needs the `input` group and a ru
 
 - **Browser fence is URL-based.** It blocks private literals and redirects at the router, but Chromium resolves DNS itself, so a rebinding server is only fully stopped by an egress proxy or firewall rule. Fetches bound at the socket layer are not affected.
 - **Local TTS** has no engine selected; voice feedback is off.
-- **Native text entry** is wired through the opt-in `ydotool` backend (`desktop_type_text`) and fails closed when `ydotool` or `/dev/uinput` is unavailable.
+- **Native text entry** is wired through the opt-in `ydotool` backend (`desktop_type_text`) and fails closed when `ydotool` or `/dev/uinput` is unavailable. The result reports `verified` from a before/after read of the focused field; it is `null` when the field cannot be read. Live verification of the full type-and-verify loop inside Misty has not been run yet.
+- **Named-window fallback** in `app/brain/agent.py` (`_resolve_named_target`, `_reason_named_window`) still matches spoken names to windows and asks a local model when id lookup fails. It is kept in use and is not yet id-only.
 - **SearXNG** is optional; `web_search` is enabled when the local instance answers. Without it, only direct fetch and the isolated browser are available.
 - **OCRmyPDF** is installed under `data/pipx`; scanned-PDF fallback is live.
 - **Reproducibility** is documented in `README.md`, `requirements.txt` and `MANIFEST.lock`. The venv still inherits system site-packages; treat the pins as the authoritative set and the system packages as recorded prerequisites.

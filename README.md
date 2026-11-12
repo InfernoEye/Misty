@@ -260,6 +260,21 @@ Runtime settings are constants and environment variables:
   for it") runs as a bounded loop: observe the screen → one action →
   observe again, with limits on rounds, time and repeated actions. It stops
   and asks rather than clicking blindly.
+- **Typing is checked, not trusted.** `desktop_type_text` reads the focused
+  field's text before and after typing and returns `verified: true` only when
+  the text grew by exactly the typed string. `false` means the text did not
+  land as typed; `null` means the field could not be read, so nothing is
+  claimed. The tool text tells the agent to check this value before it reports
+  that text was typed.
+- **Windows are targeted by KWin id and pid.** `pick_window` sets the window
+  that typing goes to, using an id from `choose_window`. An unknown id is
+  refused and nothing is typed. `launch_app` takes an exact desktop id from
+  `list_installed_apps`: when exactly one matching window is already open it
+  focuses that window instead of launching a second copy; when several are
+  open it returns the list and asks which one to use.
+- The named-window fallback (`app/brain/agent.py`, `_resolve_named_target`)
+  still matches a spoken window name to live windows, and asks a local model
+  when the id lookup fails. It is kept for now and is not id-only yet.
 - The assistant is a planner over a fixed tool list, not a general agent: it
   cannot write arbitrary code, and unsupported requests end in a summary saying
   so.

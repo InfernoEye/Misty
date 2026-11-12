@@ -23,6 +23,7 @@
 - The local visual decision runtime proposes strict image-grounded decisions but is not connected to an enabled production Cua input loop.
 - An explicit native `kwin` foreground pilot now connects real visible-region images/OCR tokens to the visual runtime; input admission is enabled by selecting it (`MISTY_KWIN_INPUT=0` gives strict preview), and every click still requires separate approval. See `docs/NATIVE_KWIN_PILOT.md`; no live acceptance or atomic focus guarantee is claimed.
 - Supported structured operations (especially window/display moves) must bypass visual routing. The narrow window-move shortcut retains normal validation/resolution/policy and requires observed destination state before claiming a verified move.
+- Typing is verified from a before/after read of the focused field; `verified` is `null` when that read is unavailable. Window targeting is by KWin id and pid, except the named-window fallback in `app/brain/agent.py`, which is still in use.
 - Do not describe the staged integration as working autonomous desktop control or enable native-Wayland/input escalation silently.
 
 ## Repository and private assets
