@@ -105,20 +105,18 @@ Expected outputs used at runtime:
 
 | Path | Used by |
 | --- | --- |
-| `third_party/llama.cpp/build/bin/llama-server` | planner model server |
-| `third_party/llama.cpp/build/bin/llama-mtmd-cli` | VLM (vision) tool |
+| `third_party/llama.cpp/build/bin/llama-server` | shared planner and vision model server |
 | `third_party/whisper.cpp/build/bin/whisper-cli` | speech transcription |
 | `kde-shortcut/build/misty-shortcut` | hold-to-talk shortcut (launched by Misty itself) |
 
 ## 5. Models (not shipped, not downloaded by Misty)
 
-The four model files are deliberately **not** in Git (8.3 GiB total; far
+The three model files are deliberately **not** in Git (about 5.9 GiB total; far
 beyond ordinary Git and never uploaded via LFS or release assets). Obtain
 them from a trusted source you control, place them at:
 
 | Path | Size (bytes) |
 | --- | --- |
-| `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` | 5,027,784,800 |
 | `models/ggml-large-v3-turbo-q5_0.bin` | 574,041,195 |
 | `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` | 5,027,784,800 |
 | `models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf` | 752,289,728 |
