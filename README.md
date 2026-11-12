@@ -289,7 +289,7 @@ Runtime settings are constants and environment variables:
 
 - Whisper quality depends on the model itself, microphone and
   on Vulkan support for the large-v3-turbo model.
--It is currently limited to Polish and English as those were languages
+- It is currently limited to Polish and English as those were languages
   i was focusing on.  
 - Needs a KDE Plasma/Wayland session. Several features degrade to a clear
   "unavailable" message instead of a crash (AT-SPI accessibility, KWin capture,
