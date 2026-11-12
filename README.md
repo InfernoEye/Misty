@@ -34,7 +34,7 @@ Run these from the repository root after the one-time setup in
 3. Place the models listed in [Models](#4-models-not-shipped-not-downloadable-by-misty)
    and check them with `.venv/bin/python -B scripts/check_deps.py`.
 4. Start Misty: `.venv/bin/python misty.py`.
-5. Press the listen shortcut and speak or type a request.
+5. Press the listen shortcut (default **F8**) and speak or type a request.
    While a task runs, **Escape** cancels it; Misty then returns to waiting for the
    listen shortcut.
 
@@ -42,14 +42,18 @@ After pulling a change to `kde-shortcut/main.cpp`, rebuild the helper with
 `cmake --build kde-shortcut/build`. The app starts the built helper, so an old
 binary does not support Escape cancel.
 
-The shortcut is stored in `config/shortcut.json` and can be changed in
-Settings → Voice. The code default is `F8`; the file in this repository
-currently holds `Launch (5)`.
+The listen shortcut defaults to **F8** when `config/shortcut.json` is missing or
+invalid. Change it in Settings → Voice; Misty saves it to `config/shortcut.json`.
+The Escape cancel key is fixed in the helper and is not configurable.
+
+The tracked `config/shortcut.json` holds `Launch (5)`, the maintainer's personal
+setting. A fresh clone therefore starts with `Launch (5)` until you change it in
+Settings → Voice.
 
 ## Architecture
 
 1. **Hold-to-talk** — the KDE GlobalAccel helper (`kde-shortcut/build/misty-shortcut`)
-   registers the shortcut (default `Launch (5)`, `config/shortcut.json`).
+   registers the shortcut (default `F8`; this repository's `config/shortcut.json` sets `Launch (5)`). While a task runs it also binds Escape to cancel.
 2. **Snapshot** — microphone audio arrives through `sounddevice` / PortAudio
    (`app/speech/recorder.py`), bounded in length.
 3. **Whisper** — the WAV goes to `third_party/whisper.cpp/build/bin/whisper-cli`
@@ -202,7 +206,7 @@ Provisioning itself can be verified with:
 
 | File | Status | Contents |
 | --- | --- | --- |
-| `config/shortcut.json` | active | `{"sequence": "Launch (5)"}`; written by Settings → Voice |
+| `config/shortcut.json` | active | `{"sequence": "Launch (5)"}` (maintainer's setting); written by Settings → Voice. Missing or invalid → `F8` |
 | `config/audio.json` | active | `{"mode": "system"}` — chosen input device |
 | `config/searxng/settings.yml` | active | SearXNG instance config (bind `127.0.0.1:8888` in this instance) |
 | `config/grammars/*.gbnf` | reference | tool-call shape, not read at runtime |
