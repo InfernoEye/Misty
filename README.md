@@ -20,6 +20,32 @@ preview) and has no live acceptance claim yet. Ordinary structured tools, includ
 and window/display operations, bypass visual routing and retain their own validation and policy. Web answers summarise and cite the
 sources the research tool actually retrieved; see [research quality](docs/RESEARCH_QUALITY.md).
 
+## Quick start
+
+Run these from the repository root after the one-time setup in
+[Requirements and installation](#requirements-and-installation):
+
+1. Create the environment and install the Python pins:
+   `/usr/bin/python -m venv .venv` then
+   `.venv/bin/python -m pip install --only-binary=:all: -r requirements.txt`
+2. Build the native parts: `git submodule update --init --recursive`, then the
+   commands in [Vendored binaries](#3-vendored-binaries), including
+   `cmake --build kde-shortcut/build`.
+3. Place the models listed in [Models](#4-models-not-shipped-not-downloadable-by-misty)
+   and check them with `.venv/bin/python -B scripts/check_deps.py`.
+4. Start Misty: `.venv/bin/python misty.py`.
+5. Press the listen shortcut and speak or type a request.
+   While a task runs, **Escape** cancels it; Misty then returns to waiting for the
+   listen shortcut.
+
+After pulling a change to `kde-shortcut/main.cpp`, rebuild the helper with
+`cmake --build kde-shortcut/build`. The app starts the built helper, so an old
+binary does not support Escape cancel.
+
+The shortcut is stored in `config/shortcut.json` and can be changed in
+Settings → Voice. The code default is `F8`; the file in this repository
+currently holds `Launch (5)`.
+
 ## Architecture
 
 1. **Hold-to-talk** — the KDE GlobalAccel helper (`kde-shortcut/build/misty-shortcut`)
