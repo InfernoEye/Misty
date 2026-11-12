@@ -137,6 +137,7 @@ class VoiceController(QObject):
     window_selection_message_requested = Signal(str)
     window_selection_cleared = Signal()
     ready_reset_requested = Signal()
+    escape_sync_requested = Signal()
     #: (success: bool, reason: str) once a helper (re)start has really bound.
     shortcut_ready = Signal(bool, str)
     typed_rejected = Signal(str, str, str)
@@ -280,6 +281,7 @@ class VoiceController(QObject):
 
         self.popup_ipc.message_received.connect(self._on_popup_message)
         self.state_changed.connect(self._send_state)
+        self.escape_sync_requested.connect(self.sync_task_escape)
         self.transcript_changed.connect(self._send_transcript)
         self.response_changed.connect(self._send_response)
         self.window_selection_requested.connect(
@@ -651,6 +653,7 @@ class VoiceController(QObject):
                 else:
                     self._shortcut_active = self.shortcut
                 self._helper_ready_event.set()
+                self._notify_escape_state()
                 print(f"[Misty] {event}", flush=True)
             elif event.startswith("ERROR"):
                 code = event[len("ERROR"):].strip() or "unknown"
@@ -806,6 +809,7 @@ class VoiceController(QObject):
         else:
             self.state_changed.emit("error")
         self.response_changed.emit(message)
+        self._notify_escape_state()
         if not confirmation and not self._has_pending_window_selection():
             self.ready_reset_requested.emit()
         return True
@@ -1939,6 +1943,10 @@ class VoiceController(QObject):
         self.state_changed.emit("thinking")
         token = TypedAdmission(True, "", request_id)
         self._busy = True
+        cancel_event = threading.Event()
+        with self._task_state_lock():
+            self._task_cancel_event = cancel_event
+        self._notify_escape_state()
         if on_admit is not None:
             # Before the worker exists: a fast failure cannot outrun the
             # caller's bookkeeping for this request id.
@@ -1949,7 +1957,7 @@ class VoiceController(QObject):
                       flush=True)
         self._worker = threading.Thread(
             target=self._process_typed_request,
-            args=(text, request_id),
+            args=(text, request_id, cancel_event),
             name="misty-typed-request",
             daemon=True,
         )
@@ -1967,9 +1975,10 @@ class VoiceController(QObject):
         )
         return TypedAdmission(False, reason, request_id)
 
-    def _process_typed_request(self, text, request_id=None):
+    def _process_typed_request(self, text, request_id=None, cancel_event=None):
         self._run_agent_session(
-            self._typed_request_body, text, request_id=request_id
+            self._typed_request_body, text, request_id=request_id,
+            cancel_event=cancel_event,
         )
 
     def _typed_request_body(self, text, request_id=None):
@@ -2249,8 +2258,26 @@ class VoiceController(QObject):
             )
         self._task_emit(self.task_finished, payload)
 
+    @Slot()
+    def sync_task_escape(self):
+        """Run on Qt's thread; queued old notifications cannot unbind a new owner."""
+        self.set_task_escape(bool(
+            not self._shutting_down and (
+                self._recording or self._confirmation_recording
+                or self._busy or self._agent_busy
+            )
+        ))
+
+    def _notify_escape_state(self):
+        # Some offline tests construct a plain controller without Qt signals.
+        try:
+            self.escape_sync_requested.emit()
+        except RuntimeError:
+            # Hand-built offline controllers have no initialized QObject.
+            pass
+
     def set_task_escape(self, active):
-        """Bind Escape globally only while a task runs; release it otherwise."""
+        """Apply the current recording/request Escape binding on Qt's thread."""
         if self.process.state() == QProcess.ProcessState.NotRunning:
             return
         command = "CANCEL_ON" if active else "CANCEL_OFF"
@@ -2263,18 +2290,52 @@ class VoiceController(QObject):
         steps and before planning starts. The step that is already
         executing is not interrupted; nothing is rolled back afterwards.
         """
+        voice_event = getattr(self, "_voice_cancel_event", None)
         with self._task_state_lock():
             event = self._session_state("_task_cancel_event", None)
-        if event is None:
+        active = (self._recording or self._confirmation_recording or self._busy
+                  or getattr(self, "_agent_busy", False) or self.active_task_id is not None)
+        if not active:
             return False
-        try:
+        if voice_event is not None:
+            voice_event.set()
+        if event is not None:
             event.set()
-        except Exception:
-            return False
+        # Abort held audio before waking an approval waiter, so the abort
+        # cannot publish a late confirmation state after the owner resumes.
+        # A subsequent RELEASE must not decode an answer/start a request.
+        if self._confirmation_recording:
+            self._abort_recording("Request cancelled.")
+        elif self._recording:
+            self._abort_recording("Request cancelled.")
+            # Retain ownership until preload cleanup finishes, rather than
+            # allowing a new request to overwrite models being loaded.
+            self._busy = True
+            self._worker = threading.Thread(
+                target=self._finish_cancelled_recording,
+                args=(voice_event,), name="misty-cancel-recording", daemon=True,
+            )
+            self._worker.start()
         self._confirm_pending(False)
-        # The task ends on its own "Task cancelled" event once the agent
-        # returns; the next step is never started.
+        self.response_changed.emit("Request cancelled.")
+        self._notify_escape_state()
         return True
+
+    def _finish_cancelled_recording(self, cancel_event):
+        try:
+            # The loader owns its model until it returns. Keep admission
+            # closed; do not unload a model concurrently with its preload.
+            for thread in (self._whisper_thread, self._agent_thread):
+                if thread is not None:
+                    thread.join()
+            self._cleanup_models()
+        finally:
+            if getattr(self, "_voice_cancel_event", None) is cancel_event:
+                self._voice_cancel_event = None
+            self._busy = False
+            self._notify_escape_state()
+            if not self._shutting_down:
+                self.ready_reset_requested.emit()
 
     @property
     def active_task_id(self):
@@ -2330,11 +2391,14 @@ class VoiceController(QObject):
             self._task_event = event_id
             self._task_failed_step = None
             self._busy = True
+            cancel_event = threading.Event()
+            self._task_cancel_event = cancel_event
             request = self._task_request
         self.response_changed.emit(
             f"Retrying {tool} with the same arguments."
         )
         self.state_changed.emit("thinking")
+        self._notify_escape_state()
         try:
             self._task_emit(self.task_started, {
                 "request": request,
@@ -2346,7 +2410,7 @@ class VoiceController(QObject):
             pass
         worker = threading.Thread(
             target=self._task_retry_execute,
-            args=(event_id, tool, arguments),
+            args=(event_id, tool, arguments, cancel_event),
             name="misty-task-retry",
             daemon=True,
         )
@@ -2366,14 +2430,14 @@ class VoiceController(QObject):
             before_visual_callback=self.unload_reasoning_model,
         )
 
-    def _task_retry_execute(self, event_id, tool, arguments):
+    def _task_retry_execute(self, event_id, tool, arguments, cancel_event=None):
         """Run one replayed step through the agent's normal tool path."""
         success = False
+        cancel_event = cancel_event if cancel_event is not None else threading.Event()
         try:
+            # Preserve the event created at admission, including a Cancel
+            # received before this worker or agent factory started.
             agent = self._task_agent()
-            # A retry gets its own cancellation event, so Cancel can stop
-            # the replay before it is executed.
-            cancel_event = threading.Event()
             agent.cancel_event = cancel_event
             with self._task_state_lock():
                 event_id = self._session_state("_task_event", None)
@@ -2448,10 +2512,11 @@ class VoiceController(QObject):
             except Exception:
                 pass
             self._busy = False
+            self._notify_escape_state()
             if not self._shutting_down:
                 self.ready_reset_requested.emit()
 
-    def _run_agent_session(self, body, *args, request_id=None, **kwargs):
+    def _run_agent_session(self, body, *args, request_id=None, cancel_event=None, **kwargs):
         """Own the per-request agent and its model cleanup.
 
         The worker creates exactly one agent, runs ``body`` against it and is
@@ -2463,8 +2528,10 @@ class VoiceController(QObject):
         task card's Cancel stops exactly this task), and the turn's activity
         events are collected for the session context.
         """
+        cancel_event = cancel_event if cancel_event is not None else threading.Event()
+        with self._task_state_lock():
+            self._task_cancel_event = cancel_event
         agent = self._task_agent()
-        cancel_event = threading.Event()
         agent.cancel_event = cancel_event
         turn_text = str(args[0]) if args and isinstance(args[0], str) else ""
         with self._task_state_lock():
@@ -2489,11 +2556,15 @@ class VoiceController(QObject):
         # emitting again here duplicated the signal for every request.
         self._task_card_started(turn_text, event_id)
         completed_normally = False
+        self._notify_escape_state()
         try:
-            body(*args, **kwargs)
+            if not cancel_event.is_set():
+                body(*args, **kwargs)
             completed_normally = True
         finally:
-            if completed_normally:
+            if cancel_event.is_set():
+                self._task_card_finish("cancelled")
+            elif completed_normally:
                 # The body returned without raising. If no decision event
                 # already closed the card (a fake agent, or an agent that
                 # returned early), close it here so "finished" is always
@@ -2503,7 +2574,10 @@ class VoiceController(QObject):
             self._session_discard_turn()
             self._agent_busy = False
             self._cleanup_models(owner=agent)
+            if getattr(self, "_voice_cancel_event", None) is cancel_event:
+                self._voice_cancel_event = None
             self._busy = False
+            self._notify_escape_state()
             if not self._shutting_down:
                 self.ready_reset_requested.emit()
 
@@ -2523,7 +2597,7 @@ class VoiceController(QObject):
 
         confirmation_pending = self._confirmation_broker.is_pending()
 
-        if self._busy:
+        if self._busy or self._worker_alive():
             if not confirmation_pending:
                 return
             if self._thread_alive(self._confirmation_worker):
@@ -2593,12 +2667,14 @@ class VoiceController(QObject):
         self.state_changed.emit("listening")
         self.response_changed.emit("Listening...")
 
+        self._voice_cancel_event = threading.Event()
         self._start_preloads()
 
         try:
             self.recorder.start()
             self._recording = True
             self._acquire_recording()
+            self._notify_escape_state()
         except Exception as error:
             print(f"[Misty] Recording start error: {error}", flush=True)
             self._busy = True
@@ -2931,19 +3007,31 @@ class VoiceController(QObject):
             audio = None
             print(f"[Misty] Recording stop error: {error}", flush=True)
 
+        cancel_event = getattr(self, "_voice_cancel_event", None)
+        if cancel_event is None:
+            cancel_event = threading.Event()
+            self._voice_cancel_event = cancel_event
+        self._notify_escape_state()
         self._worker = threading.Thread(
             target=self._process_request,
-            args=(audio,),
+            args=(audio, cancel_event),
             name="misty-voice-request",
             daemon=True,
         )
         self._worker.start()
 
-    def _process_request(self, audio):
-        self._run_agent_session(self._voice_request_body, audio)
+    def _process_request(self, audio, cancel_event=None):
+        cancel_event = cancel_event if cancel_event is not None else threading.Event()
+        self._run_agent_session(
+            self._voice_request_body, audio, cancel_event,
+            cancel_event=cancel_event,
+        )
 
-    def _voice_request_body(self, audio):
+    def _voice_request_body(self, audio, cancel_event=None):
+        cancel_event = cancel_event if cancel_event is not None else threading.Event()
         try:
+            if cancel_event.is_set() or self._shutting_down:
+                return
             if audio is None:
                 self.response_changed.emit(
                     f"I didn't hear anything. Try holding {self.shortcut} "
@@ -2956,14 +3044,22 @@ class VoiceController(QObject):
             # (bounded) before Whisper loads: both models must not be
             # resident at the same time if the preload is merely slow.
             self._join_preload_before_transcribe()
+            if cancel_event.is_set() or self._shutting_down:
+                return
             transcriber = self._transcriber
             if transcriber is None:
                 transcriber = self._transcriber_factory()
                 self._transcriber = transcriber
                 transcriber.load()
 
+            if cancel_event.is_set() or self._shutting_down:
+                return
             started = time.perf_counter()
             result = transcriber.transcribe(audio)
+            # Decoding is not interruptible. Discard its late result before
+            # publishing text, resolving a selection, or running any action.
+            if cancel_event.is_set() or self._shutting_down:
+                return
             elapsed = time.perf_counter() - started
             transcript = result["text"].strip()
 
@@ -3015,6 +3111,8 @@ class VoiceController(QObject):
                     flush=True,
                 )
 
+            if cancel_event.is_set() or self._shutting_down:
+                return
             selection_answer = self._handle_pending_window_selection(
                 transcript
             )
@@ -3042,8 +3140,12 @@ class VoiceController(QObject):
                 self._task_card_finish("completed")
                 return
 
+            if cancel_event.is_set() or self._shutting_down:
+                return
             started = time.perf_counter()
             answer = self._typed_run_agent(self._agent, transcript)
+            if cancel_event.is_set() or self._shutting_down:
+                return
 
             print(
                 f"[Misty] Agent time: "
@@ -3070,6 +3172,8 @@ class VoiceController(QObject):
                 self.state_changed.emit("complete")
 
         except Exception as error:
+            if cancel_event.is_set() or self._shutting_down:
+                return
             print(
                 f"[Misty] Request processing error: {error}",
                 flush=True,
@@ -3088,7 +3192,9 @@ class VoiceController(QObject):
 
     def _cleanup_after_start_error(self):
         self._cleanup_models()
+        self._voice_cancel_event = None
         self._busy = False
+        self._notify_escape_state()
 
     # ------------------------------------------------------------------
     # Work queries and ownership-aware model cleanup

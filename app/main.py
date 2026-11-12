@@ -309,7 +309,7 @@ class MistyApplication(QObject):
     @Slot(dict)
     def _task_card_started(self, task):
         """Show the card for one request (typed or voice)."""
-        self.voice_controller.set_task_escape(True)
+        self.voice_controller.sync_task_escape()
         card = getattr(self.main_window, "task_card", None)
         if card is None:
             return
@@ -369,7 +369,8 @@ class MistyApplication(QObject):
 
     @Slot(dict)
     def _task_card_finished(self, task):
-        self.voice_controller.set_task_escape(False)
+        # A delayed old finish must not unbind a newer recording/request.
+        self.voice_controller.sync_task_escape()
         card = getattr(self.main_window, "task_card", None)
         if card is None:
             return

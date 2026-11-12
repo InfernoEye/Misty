@@ -24,7 +24,10 @@ from tests.agent_fakes import qt_application  # noqa: E402
 HELPER = Path(controller_module.HELPER)
 
 
-@unittest.skipUnless(HELPER.is_file(), "misty-shortcut helper is not built")
+@unittest.skipUnless(
+    HELPER.is_file() and os.environ.get("MISTY_LIVE_SHORTCUT_TESTS") == "1",
+    "live KDE shortcut registration requires explicit MISTY_LIVE_SHORTCUT_TESTS=1",
+)
 class TaskEscapeHelperTests(unittest.TestCase):
     def test_helper_accepts_bind_and_unbind_without_exiting(self):
         qt_application()
@@ -56,7 +59,13 @@ class CancelReleasesApprovalTests(unittest.TestCase):
         cancel_event = threading.Event()
         controller = VoiceController.__new__(VoiceController)
         controller._confirmation_broker = broker
+        controller._recording = False
+        controller._confirmation_recording = False
+        controller._busy = True
+        controller._agent_busy = True
+        controller._voice_cancel_event = None
         controller.confirmation_resolved = _Signal()
+        controller.response_changed = _Signal()
         controller._task_state_lock = threading.RLock
         controller._session_state = lambda name, default=None: (
             cancel_event if name == "_task_cancel_event" else default

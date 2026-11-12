@@ -4520,13 +4520,26 @@ class ToolRegistry:
 
 
         if name == "inspect_screen":
-            allowed = {
-                "mode", "screen_name", "window_id", "prompt", "include_visual"
-            }
-            if set(arguments) - allowed:
+            # Use the advertised contract as the allowlist. Never silently
+            # discard unknown fields: they may specify an intended private
+            # capture scope that dropping them would broaden.
+            properties = INSPECT_SCREEN_DEFINITION["function"]["parameters"]["properties"]
+            if set(arguments) - set(properties):
                 return {
                     "success": False,
-                    "message": "inspect_screen received unsupported arguments.",
+                    "code": "invalid_arguments",
+                    "not_executed": True,
+                    # Only fixed schema names/types leave this boundary; even
+                    # unknown argument *names* may contain private model data.
+                    "message": (
+                        "inspect_screen received unsupported arguments. "
+                        "Allowed fields: mode (string: desktop, active_window, "
+                        "screen, window), screen_name (string; mode=screen), "
+                        "window_id (string; mode=window), prompt (string, max 500), "
+                        "include_visual (boolean). Correct the call while "
+                        "preserving its intended capture scope; do not broaden "
+                        "capture to work around invalid arguments."
+                    ),
                 }
             if self.vision_service is None:
                 return {

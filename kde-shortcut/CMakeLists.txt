@@ -16,3 +16,11 @@ target_link_libraries(misty-shortcut
         Qt6::Gui
         KF6::GlobalAccel
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(test-command-reader test_command_reader.cpp)
+    target_link_libraries(test-command-reader PRIVATE Qt6::Core)
+    add_test(NAME shortcut-command-reader COMMAND test-command-reader)
+    set_tests_properties(shortcut-command-reader PROPERTIES TIMEOUT 5)
+endif()

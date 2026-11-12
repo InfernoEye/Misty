@@ -181,7 +181,7 @@ def _norm(observation):
 def run_loop(observe, decide, act, *, max_rounds=DEFAULT_MAX_ROUNDS,
              budget_seconds=DEFAULT_BUDGET_SECONDS,
              stall_limit=DEFAULT_STALL_LIMIT, clock=time.monotonic,
-             on_step=None):
+             on_step=None, cancel=None):
     """Run the bounded loop and return a :class:`LoopReport`.
 
     ``observe()`` returns any JSON-safe description of the current state.
@@ -202,7 +202,16 @@ def run_loop(observe, decide, act, *, max_rounds=DEFAULT_MAX_ROUNDS,
     last_observation = None
     steps = []
 
+    def cancelled():
+        return cancel is not None and cancel.is_set()
+
+    def cancellation_report():
+        return LoopReport("stopped", steps,
+                          "Task cancelled. Completed actions were not rolled back.")
+
     for round_number in range(1, rounds + 1):
+        if cancelled():
+            return cancellation_report()
         if clock() >= deadline:
             return LoopReport("budget", steps, "Time budget exhausted.")
 
@@ -213,6 +222,8 @@ def run_loop(observe, decide, act, *, max_rounds=DEFAULT_MAX_ROUNDS,
                 "failed", steps, f"Could not look at the screen: {error}"
             )
 
+        if cancelled():
+            return cancellation_report()
         if isinstance(observation, dict) and observation.get("available") is False:
             return LoopReport("failed", steps,
                               str(observation.get("note") or "Screen observation unavailable."))
@@ -235,6 +246,8 @@ def run_loop(observe, decide, act, *, max_rounds=DEFAULT_MAX_ROUNDS,
             return LoopReport(
                 "failed", steps, f"I could not decide what to do next: {error}"
             )
+        if cancelled():
+            return cancellation_report()
         if not isinstance(decision, dict):
             return LoopReport(
                 "failed", steps, "The next action was not a decision."
@@ -268,6 +281,8 @@ def run_loop(observe, decide, act, *, max_rounds=DEFAULT_MAX_ROUNDS,
         if clock() >= deadline:
             return LoopReport("budget", steps, "Time budget exhausted.")
 
+        if cancelled():
+            return cancellation_report()
         try:
             result = act(tool, dict(arguments))
         except Exception as error:  # noqa: BLE001
@@ -287,6 +302,8 @@ def run_loop(observe, decide, act, *, max_rounds=DEFAULT_MAX_ROUNDS,
             except Exception:  # noqa: BLE001 - a reporter must not stop work
                 pass
 
+        if cancelled():
+            return cancellation_report()
         if isinstance(result, dict):
             if result.get("code") == "confirmation_declined":
                 # The user said no: that is a question for them, not a fault.

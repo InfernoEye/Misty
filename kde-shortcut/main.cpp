@@ -1,7 +1,7 @@
 #include <QAction>
 #include <QGuiApplication>
 #include <QKeySequence>
-#include <QSocketNotifier>
+#include "command_reader.h"
 #include <QString>
 #include <QTextStream>
 
@@ -134,16 +134,16 @@ int main(int argc, char *argv[])
 
     // Escape is bound only while a task runs, so other applications keep it
     // the rest of the time.
-    QTextStream input(stdin);
-    QSocketNotifier commands(0, QSocketNotifier::Read);
-    QObject::connect(&commands, &QSocketNotifier::activated, [&globalAccel, &cancelTask, &input, cancelKey](int) {
-        while (!input.atEnd()) {
-            const QString command = input.readLine().trimmed();
-            if (command == QLatin1String("CANCEL_ON")) {
-                globalAccel->setShortcut(&cancelTask, {cancelKey}, KGlobalAccel::NoAutoloading);
-            } else if (command == QLatin1String("CANCEL_OFF")) {
-                globalAccel->setShortcut(&cancelTask, {}, KGlobalAccel::NoAutoloading);
-            }
+    CommandReader commands(0, [globalAccel, &cancelTask, cancelKey](const QByteArray &command) {
+        if (command != "CANCEL_ON" && command != "CANCEL_OFF") {
+            return;
+        }
+        const QList<QKeySequence> requested = command == "CANCEL_ON"
+            ? QList<QKeySequence>{cancelKey} : QList<QKeySequence>{};
+        if (!globalAccel->setShortcut(&cancelTask, requested, KGlobalAccel::NoAutoloading)
+            || globalAccel->shortcut(&cancelTask) != requested) {
+            QTextStream(stderr) << "Could not apply Misty Escape cancellation binding: "
+                                << command << "\n";
         }
     });
 

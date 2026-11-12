@@ -744,6 +744,12 @@ def resolve_direct_action(text):
     if _has_action_negation(text):
         return None
 
+    # Research/recommendation is not satisfied by merely opening a search.
+    # Preserve the whole goal for capability-aware planning.
+    from app.brain.research_routing import prefers_research
+    if prefers_research(text):
+        return None
+
     masked = _MaskedText.from_request(text)
 
     # 2. A second independent instruction would be silently dropped.

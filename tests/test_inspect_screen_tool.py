@@ -203,7 +203,77 @@ class InspectScreenToolTests(unittest.TestCase):
             {"command": "do something"},
         )
         self.assertFalse(result["success"])
+        self.assertEqual(result["code"], "invalid_arguments")
+        self.assertIs(result["not_executed"], True)
         self.vision.inspect.assert_not_called()
+
+    def test_unsupported_argument_diagnostics_do_not_echo_private_names_or_values(self):
+        result = self.registry.execute(
+            "inspect_screen", {"private customer note": "confidential payload"}
+        )
+        self.assertNotIn("private customer note", str(result))
+        self.assertNotIn("confidential payload", str(result))
+        properties = INSPECT_SCREEN_DEFINITION["function"]["parameters"]["properties"]
+        for name in properties:
+            self.assertIn(name, result["message"])
+        self.vision.inspect.assert_not_called()
+
+    def test_advertised_optional_fields_pass_strict_dispatch(self):
+        # Exercise each property rather than comparing duplicate allowlists.
+        self.registry.executor = FakeWindowExecutor([], screens=[{
+            "name": "DP-1", "width": 1920, "height": 1080,
+        }])
+        for arguments in (
+            {"mode": "desktop"},
+            {"mode": "screen", "screen_name": "DP-1"},
+            {"prompt": "What is visible?"},
+            {"include_visual": False},
+        ):
+            with self.subTest(arguments=arguments):
+                result = self.registry.execute("inspect_screen", arguments)
+                self.assertTrue(result["success"], result)
+
+    def test_safe_invalid_argument_repair_runs_only_corrected_capture(self):
+        from app.brain.agent_loop import run_loop
+        decisions = iter([
+            {"kind": "act", "tool": "inspect_screen",
+             "arguments": {"mode": "active_window", "question": "Read dialog"}},
+            {"kind": "act", "tool": "inspect_screen",
+             "arguments": {"mode": "active_window", "prompt": "Read dialog"}},
+            {"kind": "done", "note": "Observed"},
+        ])
+        observations = iter(["before", "repair", "after"])
+        history = []
+        def decide(observation, previous):
+            history.append(previous)
+            return next(decisions)
+        report = run_loop(lambda: next(observations), decide, self.registry.execute)
+        self.assertEqual(report.status, "done")
+        self.assertEqual(history[1][0]["result"]["code"], "invalid_arguments")
+        self.vision.inspect.assert_called_once_with(
+            mode="active_window", screen_name=None, window_id=None,
+            prompt="Read dialog", include_visual=True,
+        )
+
+    def test_invalid_argument_repairs_are_bounded(self):
+        from app.brain.agent_loop import run_loop
+        observe = Mock(side_effect=["first", "second", "third", "fourth"])
+        decide = Mock(return_value={
+            "kind": "act", "tool": "inspect_screen", "arguments": {"question": "Read dialog"},
+        })
+        report = run_loop(observe, decide, self.registry.execute, max_rounds=8)
+        self.assertEqual(report.status, "failed")
+        self.assertEqual(decide.call_count, 3)
+        self.vision.inspect.assert_not_called()
+
+    def test_uncertain_inspection_failure_is_not_repaired(self):
+        from app.brain.agent_loop import run_loop
+        self.vision.inspect.side_effect = RuntimeError("capture failed")
+        decide = Mock(return_value={"kind": "act", "tool": "inspect_screen", "arguments": {}})
+        report = run_loop(lambda: "screen", decide, self.registry.execute)
+        self.assertEqual(report.status, "failed")
+        decide.assert_called_once()
+        self.vision.inspect.assert_called_once()
 
     def test_rejects_non_boolean_visual_toggle(self):
         result = self.registry.execute(

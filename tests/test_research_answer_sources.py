@@ -63,9 +63,10 @@ class ResearchAnswerTests(unittest.TestCase):
         self.assertNotIn("javascript:alert(1)", [s["url"] for s in sources])
         self.assertLessEqual(len(sources[0]["text"]), 4000)
 
-    def test_research_prompt_explains_that_results_are_the_answer(self):
+    def test_research_prompt_treats_sources_as_evidence_not_automatic_completion(self):
         from app.brain.agent import ACCURACY_GUIDANCE, FINAL_RESPONSE_INSTRUCTIONS
-        self.assertIn("that IS the information", ACCURACY_GUIDANCE)
+        self.assertIn("evidence, not proof", ACCURACY_GUIDANCE)
+        self.assertIn("dependent goal", ACCURACY_GUIDANCE)
         self.assertIn("cannot find it", ACCURACY_GUIDANCE)
         self.assertIn("cite each source URL", FINAL_RESPONSE_INSTRUCTIONS)
 

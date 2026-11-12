@@ -368,6 +368,7 @@ def run_desktop_task(agent, goal, research="", vision=None, mode="desktop",
     report = agent_loop.run_loop(
         observe, decide, act, max_rounds=max_rounds,
         budget_seconds=budget_seconds, on_step=on_step,
+        cancel=getattr(agent, "cancel_event", None),
     )
     # The loop decides from an OCR/caption DESCRIPTION, never from pixels, so
     # its model cannot claim to have seen an interface it was only told about.

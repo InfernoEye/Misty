@@ -212,7 +212,10 @@ a graphical application or a web page the user asked to open. Choose
 "direct" when a single tool call or a short plan of tool calls answers it.
 
 Examples of "desktop": "click the X on my screen", "in Discord open channel
-Y", "find a product on <site> and show it", "go to my bank site and log in".
+Y", "select this visible listing", "go to my bank site and log in".
+Research, comparing products and finding public listings on a named site are
+"direct": web_research/web_search can discover and read public sources without
+operating the user's browser. A site name alone never requires desktop input.
 A screen/window mention alone does NOT require vision. Distinguish changing
 window geometry/identity with existing tools from operating its visible contents.
 
@@ -239,9 +242,8 @@ _SCREEN_REFERENCES = (
     # Something only visible on a screen.
     "screen", "monitor", "display", "window", "click", "cursor",
     "right side", "left side", "taskbar", "tray", "desktop icon",
-    # Operating a site in a browser: the result depends on what the page
-    # shows, so the answer cannot come from a plan over facts.
-    "on amazon", "on ebay", "on allegro", "in amazon", "in ebay",
+    # Explicit interaction/account state requires the desktop; merely naming
+    # a public site does not (research/search tools can read public sources).
     "go on ", "go to the site", "log in to", "sign in to", "add to cart",
     "show it", "show me the page", "open the page", "the listing",
     "in discord", "in slack", "in telegram", "in my browser",
@@ -288,7 +290,9 @@ def looks_like_desktop_work(agent, request, attempts=2):
     """
     if not isinstance(request, str) or not request.strip():
         return False
-    if prefer_structured_tools(request) or prefer_structured_sequence(request):
+    from app.brain.research_routing import prefers_research
+    if (prefer_structured_tools(request) or prefer_structured_sequence(request)
+            or prefers_research(request)):
         return False
     for _attempt in range(max(1, int(attempts))):
         route = route_from_model(agent, request)
