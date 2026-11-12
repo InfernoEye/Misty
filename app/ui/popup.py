@@ -87,7 +87,7 @@ class MistyPopup(QWidget):
         title = QLabel("Misty")
         title.setObjectName("title")
 
-        subtitle = QLabel("YOUR LOCAL DESKTOP ASSISTANT")
+        subtitle = QLabel("YOUR LOCAL ASSISTANT")
         subtitle.setObjectName("subtitle")
 
         title_column.addWidget(title)
