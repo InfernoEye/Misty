@@ -358,6 +358,10 @@ def _clean_query(value):
         query,
         flags=re.IGNORECASE,
     )
+    # "Search for X" / "Szukaj dla X": the connector belongs to the verb
+    # phrase, not the topic. Only one leading connector is stripped, so a
+    # topic beginning with the same word ("For King and Country") survives.
+    query = re.sub(r"^(?:for|dla)(?:\s+|$)", "", query, flags=re.IGNORECASE)
     query = re.sub(
         r"^(?:a|an|some|any)\s+", "", query, flags=re.IGNORECASE
     )
@@ -762,10 +766,13 @@ def resolve_direct_action(text):
     screen_summary = _SCREEN_SUMMARY_RE.search(text)
     if screen_summary:
         return _screen_summary("screen", screen_summary.group(1).casefold())
-    if _WHOLE_SCREEN_SUMMARY_RE.search(text):
-        return _screen_summary("screen", "primary")
+    # A page noun wins over the whole-screen fallback: "summarize what
+    # I'm seeing on this page" targets the active window, not the primary
+    # screen. A bare "summarize what I'm seeing" still falls through.
     if _PAGE_SUMMARY_RE.search(text) and not masked.spans:
         return _screen_summary("active_window", None)
+    if _WHOLE_SCREEN_SUMMARY_RE.search(text):
+        return _screen_summary("screen", "primary")
 
     # 4. "Summarize https://..." needs the page fetched and read; only the
     #    planner can do that, and a bare open_url would drop the summary.

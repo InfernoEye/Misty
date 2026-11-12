@@ -1742,13 +1742,25 @@ class MistyAgent:
             return "Request cancelled. No navigation action was started."
         started_at = time.monotonic()
         try:
-            result = self.registry.execute(
-                name, arguments, confirmed=False
-            )
+            # Direct screen summaries bypass _chat(), which normally starts
+            # the shared VLM server. Own readiness here instead of relying on
+            # a voice preload that transcription may already have released.
+            if name == "inspect_screen" and arguments.get("include_visual", True):
+                self.ensure_reasoning_ready()
+            if self._cancelled():
+                result = {
+                    "success": False, "cancelled": True,
+                    "message": "Request cancelled. No direct action was started.",
+                }
+            else:
+                result = self.registry.execute(
+                    name, arguments, confirmed=False
+                )
         except Exception:
             result = {
                 "success": False,
-                "message": "The navigation action failed.",
+                "message": ("Screen inspection failed: the local visual model could not be prepared."
+                            if name == "inspect_screen" else "The navigation action failed."),
             }
 
         succeeded = (
@@ -2527,8 +2539,12 @@ class MistyAgent:
             "--mmproj", str(PROJECTOR_PATH),
             "-ngl", GPU_LAYERS,
             "-c", CONTEXT_SIZE,
-            "-n", "8192",
+            "-n", "16384",
             "-np", "1",
+            "--cache-type-k", "q4_0",
+            "--cache-type-v", "q4_0",
+            "--flash-attn", "on",
+            "--load-mode", "none",
             "--host", HOST,
             "--port", str(PORT),
             "--jinja",
