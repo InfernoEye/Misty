@@ -2737,6 +2737,7 @@ class MistyAgent:
                     tools=[], response_format={"type": "json_object"},
                 )
                 raw_plan = planning_message.get("content")
+                print(f"[Misty] Planner reply: {raw_plan!r}", flush=True)
                 if not isinstance(raw_plan, str) or not raw_plan.strip():
                     raise PlanValidationError("The local model returned an empty task plan.")
                 try:

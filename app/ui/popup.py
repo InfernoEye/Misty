@@ -94,8 +94,7 @@ class MistyPopup(QWidget):
         title_column.addWidget(subtitle)
 
         header.addWidget(self.logo)
-        header.addLayout(title_column)
-        header.addStretch()
+        header.addLayout(title_column, 1)
 
         self.status = QLabel()
         self.status.setObjectName("status")
@@ -217,6 +216,10 @@ class MistyPopup(QWidget):
         )
         self.confirmation_description.setWordWrap(True)
         self.confirmation_description.setTextFormat(Qt.TextFormat.PlainText)
+        self.confirmation_description.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum,
+        )
 
         confirmation_buttons = QHBoxLayout()
         confirmation_buttons.setSpacing(8)
@@ -448,7 +451,7 @@ class MistyPopup(QWidget):
 
             QLabel#subtitle {
                 font-size: 8px;
-                letter-spacing: 1.2px;
+                letter-spacing: 0.6px;
                 color: #8994AE;
                 font-weight: 600;
             }
@@ -457,7 +460,7 @@ class MistyPopup(QWidget):
                 background-color: #293348;
                 color: #AFC2F8;
                 border-radius: 9px;
-                padding: 6px 9px;
+                padding: 6px 7px;
                 font-size: 9px;
                 font-weight: 800;
             }
@@ -495,6 +498,7 @@ class MistyPopup(QWidget):
             }
 
             QLabel#cardContent {
+                background-color: transparent;
                 color: #EDF0F8;
                 font-size: 13px;
             }
@@ -630,7 +634,7 @@ class MistyPopup(QWidget):
         self.state_label.setText(label)
         self.status.setStyleSheet(
             f"background-color: #293348; color: {color}; "
-            "border-radius: 9px; padding: 6px 9px; "
+            "border-radius: 9px; padding: 6px 7px; "
             "font-size: 9px; font-weight: 800;"
         )
         self.state_label.setStyleSheet(
