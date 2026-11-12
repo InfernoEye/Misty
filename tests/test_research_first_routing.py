@@ -108,6 +108,21 @@ class ResearchRoutingTests(unittest.TestCase):
             REQUEST, {'success': True, 'results': [no_body]}, arguments), arguments)
         self.assertEqual(len(agent.chat_calls), 1)
 
+    def test_unreadable_research_does_not_claim_destination_lookup_or_matches(self):
+        registry = ResearchRegistry([{
+            'success': False,
+            'message': 'Search returned results, but no page could be read.',
+        }])
+        agent = TestableMistyAgent(registry, [{'content': 'Unsupported recommendation.'}])
+        answer = agent.run(REQUEST)
+        self.assertEqual(registry.executed, ['web_research'])
+        self.assertIn('could not retrieve readable public sources', answer)
+        self.assertIn('destination lookup did not run', answer)
+        self.assertNotIn('Public listing matches', answer)
+        self.assertNotIn('action(s)', answer)
+        self.assertNotIn('Unsupported recommendation', answer)
+        self.assertFalse(agent.final_payload()['research_goal']['destination_lookup'])
+
     def test_denial_never_tries_a_different_backend(self):
         registry = ResearchRegistry([])
         registry.requires_confirmation = lambda *args: True

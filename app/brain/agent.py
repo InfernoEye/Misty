@@ -3401,7 +3401,10 @@ class MistyAgent:
                     "a budget/currency or count successful tool calls as goal completion.")
                 final_data["research_goal"] = {
                     "original_criteria": transcript,
-                    "destination_lookup": bool(research_override and len(research_override["steps"]) > 1),
+                    "destination_lookup": any(
+                        entry.get("id") == "research_destination"
+                        and entry.get("status") not in {"blocked", "skipped", "pending"}
+                        for entry in execution_results),
                     "listing_verification": "not independently verified",
                 }
 
@@ -3457,10 +3460,27 @@ class MistyAgent:
                     final_answer = (
                         "The public-source lookup finished, but I could not produce "
                         "a grounded comparison. I cannot claim a recommendation.")
-                if len(research_override["steps"]) > 1:
+                destination = next((entry for entry in execution_results
+                                    if entry.get("id") == "research_destination"), None)
+                if destination and destination.get("status") == "success":
                     final_answer += (
                         "\n\nPublic listing matches are not independently verified. "
                         "Price, condition, seller and availability still need checking.")
+                elif destination:
+                    final_answer += (
+                        "\n\nI could not complete the destination lookup; "
+                        "I have no verified listing matches.")
+                if outcome != "completed" and not research:
+                    # No readable evidence means no comparison. Keep the UI
+                    # concise; the activity/audit report retains step details.
+                    if denied_any:
+                        final_answer = "Research was not authorized. I did not produce a recommendation."
+                    else:
+                        final_answer = (
+                            "I could not retrieve readable public sources, so I could not "
+                            "compare options or recommend one.")
+                    if destination and destination.get("status") == "blocked":
+                        final_answer += " The destination lookup did not run because the research step failed."
 
             # "completed" only when the original user intent completed.  The
             # task journal accepts completed/failed/cancelled only, so a
@@ -3498,6 +3518,8 @@ class MistyAgent:
             # Keep the deterministic outcome report visible even if the
             # language model's final summary is empty or inaccurate.
             if final_answer:
+                if research_override is not None and not research:
+                    return final_answer
                 return final_answer + "\n\n" + summary
             return summary
 
