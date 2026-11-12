@@ -59,7 +59,7 @@ class AgentRoutingTests(unittest.TestCase):
     def test_optional_visual_callback_preserves_constructor_compatibility(self):
         registry = SimpleNamespace()
         old = MistyAgent(registry=registry)
-        # Without the voice controller, a standalone run still releases Qwen.
+        # Without the voice controller, a standalone run still releases Ministral.
         self.assertEqual(old.before_visual_callback, old.stop)
         callback = Mock()
         new = MistyAgent(registry=registry, before_visual_callback=callback)

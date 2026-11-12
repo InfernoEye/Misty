@@ -6,7 +6,7 @@ Status: proposed; design only. No dependencies installed, runtime replaced, or d
 
 Use the DSH Next computer-use pattern: one driver-owned desktop interface, real image-bearing observations, exact tool schemas, and an iterative model/tool loop. Keep Misty's voice and UI. Do not embed the DSH Electron application or copy its entire TypeScript plugin system.
 
-Preferred controller: the existing local Qwen3VL model, acting as the GUI decision-maker rather than a caption generator. Keep text Qwen for ordinary non-GUI requests. Prefer a persistent task-scoped multimodal llama.cpp server if its image API and structured output are proven by an integration test. Do not assume the current vision CLI supports that contract.
+Preferred controller: the existing local Ministral 3 8B model, acting as the GUI decision-maker rather than a caption generator. Keep text Ministral for ordinary non-GUI requests. Prefer a persistent task-scoped multimodal llama.cpp server if its image API and structured output are proven by an integration test. Do not assume the current vision CLI supports that contract.
 
 Preferred provider boundary: a managed, version-pinned Cua `mcp` subprocess using its supported stdio protocol. DSH embeds the native SDK in process; choosing MCP for Python Misty reuses the driver's public contracts while isolating native crashes and avoiding a Node bridge. The exact executable/distribution and Linux support must be verified before selecting a dependency. If no supported Linux transport exists, stop at capability diagnosis rather than silently revive raw-coordinate automation.
 
@@ -21,7 +21,7 @@ For “Click Dragon Cave in Discord on the right screen”:
 3. Read monitor/window metadata; resolve rightmost monitor by geometry, not connector numbering. Filter Discord candidates by that monitor.
 4. If multiple matching windows/targets remain, ask a specific question. Do not click a similarly named title and assume success.
 5. Obtain task approval before any input. Capture the selected target's visible state within the approved observation scope.
-6. Give Qwen3VL that actual image, accessible elements/tokens when available, the goal, and allowed tool schemas.
+6. Give Ministral 3 8B that actual image, accessible elements/tokens when available, the goal, and allowed tool schemas.
 7. Validate one proposed action; execute via Cua; obtain a fresh observation.
 8. Finish only when evidence supports the requested selection. Otherwise continue within limits, ask, or stop with an honest partial result.
 
@@ -157,7 +157,7 @@ The task duration is an admission deadline, not proof an OS/native call is preem
 
 ## 8. Models and spoken approval
 
-Avoid reloading text Qwen between every visual step. After routing, release text reasoning ownership and acquire the visual runtime for the task. Release/unload it on task exit. Task residency reduces load overhead; this requires verified persistent multimodal-server support and sufficient memory, not a promise about current performance.
+Avoid reloading text Ministral between every visual step. After routing, release text reasoning ownership and acquire the visual runtime for the task. Release/unload it on task exit. Task residency reduces load overhead; this requires verified persistent multimodal-server support and sufficient memory, not a promise about current performance.
 
 Before **every** approval or clarification wait, including button-only prompts:
 
@@ -214,7 +214,7 @@ A status view should distinguish waiting for user permission, loading a model, p
 |---|---|---|
 | A — capability spike | Pinned supported Cua distribution; read-only MCP handshake/catalog/permissions and one targeted snapshot | Works on this KDE/Wayland session; no input tools invoked; supported features recorded |
 | B — provider adapter | Managed transport, exact schemas/results/images, cancellation, generation/cleanup tests | No orphan process, no token reuse across reconnect, no unknown tool exposure |
-| C — visual decision runtime | Local Qwen3VL receives actual screenshot plus schemas and emits a validated action proposal | Controlled screenshot tests, image-capability check, bounded malformed-output handling, measured latency/memory |
+| C — visual decision runtime | Local Ministral 3 8B receives actual screenshot plus schemas and emits a validated action proposal | Controlled screenshot tests, image-capability check, bounded malformed-output handling, measured latency/memory |
 | D — controller/policy | Existing desktop route dispatches v2; approval/scope/model handoff wired end-to-end | Fake-only tests prove no unauthorized input and every terminal path cleans up |
 | E — controlled live acceptance | One harmless test application with visible state changes | Targeted action and fresh-state verification succeed, including cancellation and stale-token cases |
 | F — Discord pilot | Task-scoped real request on right monitor | Correct target selected and verified; diagnostic progress visible; no false completion |
@@ -240,4 +240,4 @@ Use explicit settings `desktop_backend = legacy | cua` and `desktop_visual_model
 
 This design does not promise unrestricted autonomous desktop control, perfect semantic verification, hidden-window visibility or platform feature parity. It does not migrate Misty's non-GUI tools or change its default LLM provider to a cloud service.
 
-Before implementation lock-in: establish the real supported Cua executable/Python packaging and exact catalog, KDE Wayland capabilities, multimodal llama.cpp server flags/API/structured-output behavior for the installed Qwen3VL artifacts, and available GPU memory/latency. These require targeted capability tests, not further mock-only assurance. If phase A or C fails, publish the concrete limitation and reconsider the backend/model choice before integrating writes.
+Before implementation lock-in: establish the real supported Cua executable/Python packaging and exact catalog, KDE Wayland capabilities, multimodal llama.cpp server flags/API/structured-output behavior for the installed Ministral 3 8B artifacts, and available GPU memory/latency. These require targeted capability tests, not further mock-only assurance. If phase A or C fails, publish the concrete limitation and reconsider the backend/model choice before integrating writes.

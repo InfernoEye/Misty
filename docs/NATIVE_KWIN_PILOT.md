@@ -38,7 +38,7 @@ Target scope comes from what you actually named, using the same shared window re
 
 A named application that cannot be found, or an ambiguous match, stops with a clarification; the pilot never substitutes another window. Supported first-stage action is one approved left click on a visible OCR word token. Browsing by screen position without any named app is not yet a supported target.
 
-Before each observation, the agent's resident Qwen server is stopped and actual liveness is checked — including in the standalone `misty.py` launcher, not only voice-controller runs — so two local models never intentionally share VRAM.
+Before each observation, the agent's resident Ministral server is stopped and actual liveness is checked — including in the standalone `misty.py` launcher, not only voice-controller runs — so two local models never intentionally share VRAM.
 
 Existing structured tools, such as moving a window to another screen, do not use this visual loop. They keep their normal policy and direct/planner execution path, irrespective of the selected visual backend.
 

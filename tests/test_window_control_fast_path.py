@@ -31,7 +31,7 @@ class Registry:
 
 class NoModelAgent(MistyAgent):
     def start(self):
-        raise AssertionError("A single window action must not start Qwen")
+        raise AssertionError("A single window action must not start Ministral")
     def _chat(self, *args, **kwargs):
         raise AssertionError("A single window action must not need a model")
 

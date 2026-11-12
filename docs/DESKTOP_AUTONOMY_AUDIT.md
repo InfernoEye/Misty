@@ -9,7 +9,7 @@ Source audit of desktop request routing, observation, model decisions, execution
 | Priority | Finding | Evidence | Status |
 |---|---|---|---|
 | P1 | Visual requests can fall into the static planner when routing fails. Two unsuccessful classifier attempts return False rather than using the existing screen-reference fallback. | [task_grant.py](../app/brain/task_grant.py#L141-L161), [agent.py](../app/brain/agent.py#L2328-L2334) | Open |
-| P1 | Desktop routing happens before the run method starts Qwen. `_chat` itself does not ensure startup. A prewarmed model can hide this dependency. | [agent.py](../app/brain/agent.py#L2224-L2248), [agent.py](../app/brain/agent.py#L2328-L2367) | Open |
+| P1 | Desktop routing happens before the run method starts Ministral. `_chat` itself does not ensure startup. A prewarmed model can hide this dependency. | [agent.py](../app/brain/agent.py#L2224-L2248), [agent.py](../app/brain/agent.py#L2328-L2367) | Open |
 | P1 | Vision explicitly releases the reasoning model; the desktop decider subsequently calls `_chat` without ensuring it has restarted. | [coordinator.py](../app/desktop/vision/coordinator.py#L94-L104), [main.py](../app/main.py#L211-L225), [desktop_task.py](../app/brain/desktop_task.py#L227-L234) | Open |
 | P1 | Decider receives tool names, not argument schemas, and uses `tools=[]`. It must guess argument names and contracts. | [desktop_task.py](../app/brain/desktop_task.py#L207-L234) | Open |
 | P1 | OCR image coordinates are offered as click positions without preserving capture origin/scale. Click dispatch uses x/y directly, ignoring a screen argument. | [desktop_task.py](../app/brain/desktop_task.py#L136-L170), [tools.py](../app/brain/tools.py#L3005-L3032) | Open |

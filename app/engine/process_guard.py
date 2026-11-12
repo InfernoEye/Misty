@@ -94,7 +94,7 @@ def cleanup_orphan_popup_processes(root: Path, timeout: float = 2.0) -> int:
 
 
 # The model servers are the expensive orphans: each one holds its weights in
-# RAM (the shared Qwen3-VL 8B server, ~5 GB) and a listening port. They are
+# RAM (the shared Ministral 3 8B server, ~5 GB) and a listening port. They are
 # spawned with start_new_session=True, so they survive SIGINT/SIGTERM/SIGKILL
 # of Misty itself and a plain restart does not reclaim them.
 # llama-mtmd-cli is no longer spawned, but an orphan from an older run must still be reclaimed.

@@ -2,7 +2,7 @@
 
 Misty is a local desktop assistant for KDE Plasma on Linux. Hold a key, speak
 in English or Polish, and Misty transcribes the request, plans a short sequence
-of tool calls with a local Qwen3-VL 8B model, executes them, and shows a summary. No
+of tool calls with a local Ministral 3 8B model, executes them, and shows a summary. No
 account, cloud API key, or remote model is involved; everything runs on the
 machine (see [Privacy model](#privacy-model)).
 
@@ -29,7 +29,7 @@ sources the research tool actually retrieved; see [research quality](docs/RESEAR
 3. **Whisper** — the WAV goes to `third_party/whisper.cpp/build/bin/whisper-cli`
    with `models/ggml-large-v3-turbo-q5_0.bin`.
 4. **Planner** — `app/brain/agent.py` starts one shared `llama-server` on demand
-   (`models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` with its
+   (`models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf` with its
    projector, Vulkan) and asks for one JSON plan
    (`response_format: json_object`), validated by `app/brain/planner.py`.
    At most one read-only recovery round follows a failure. The files under
@@ -120,8 +120,8 @@ server with a separate API key.
 | Path | Purpose | Size (bytes) |
 | --- | --- | --- |
 | `models/ggml-large-v3-turbo-q5_0.bin` | whisper.cpp speech model | 574,041,195 |
-| `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` | planner and vision model | 5,027,784,800 |
-| `models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf` | vision projector | 752,289,728 |
+| `models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf` | planner and vision model | 5,198,911,904 |
+| `models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf` | vision projector | 858,283,168 |
 
 The expected sha256 of each file is in `MANIFEST.lock`; compare after copying
 them in. Playwright's Chromium bundle under `data/playwright-browsers` can be
@@ -187,8 +187,8 @@ Runtime settings are constants and environment variables:
 | Variable | Default |
 | --- | --- |
 | `MISTY_LLAMA_SERVER` | `third_party/llama.cpp/build/bin/llama-server` |
-| `MISTY_MODEL_PATH` | `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` |
-| `MISTY_PROJECTOR_PATH` | `models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf` |
+| `MISTY_MODEL_PATH` | `models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf` |
+| `MISTY_PROJECTOR_PATH` | `models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf` |
 | `MISTY_LLAMA_HOST` / `MISTY_LLAMA_PORT` | `127.0.0.1` / `9931` |
 | `MISTY_LLAMA_GPU_LAYERS` | `99` |
 | `MISTY_LLAMA_CONTEXT` | `32768` |

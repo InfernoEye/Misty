@@ -7,7 +7,7 @@ Updated: 10 November 2026 (post-audit remediation and QOL batch). This tracks wh
 | Area | Status | Implementation |
 |---|---|---|
 | F8 audio → whisper.cpp → transcript | live | `app/engine/voice_controller.py`, `app/speech/transcriber.py` |
-| Local Qwen plan → validate → execute → summarize | live; one fixed plan per request plus at most one read-only recovery replan | `app/brain/agent.py`, `app/brain/planner.py` |
+| Local Ministral plan → validate → execute → summarize | live; one fixed plan per request plus at most one read-only recovery replan | `app/brain/agent.py`, `app/brain/planner.py` |
 | Result references between plan steps | live; `$steps.<id>.result.<field>` bound only to earlier `depends_on` steps | `planner.substitute_references` |
 | Intent confidence, clarification, per-step reason | live; clarification answers carry the original request into the next plan | `agent.run(transcript, context=...)` |
 | Negation and compound-request guards | live; direct routing declines negated/compound requests instead of executing a fragment | `app/brain/direct_actions.py` |

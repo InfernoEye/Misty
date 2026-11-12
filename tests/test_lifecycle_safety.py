@@ -86,7 +86,7 @@ class OrderTranscriber:
 
 
 class BlockingAgent:
-    """Agent double whose start() blocks until its gate opens (Qwen preload)."""
+    """Agent double whose start() blocks until its gate opens (Ministral preload)."""
 
     def __init__(self, order, gate=None):
         self.order = order
@@ -659,7 +659,7 @@ class MainShutdownTests(unittest.TestCase):
 
 
 class ModelOrderTests(unittest.TestCase):
-    """C. Preload joined before whisper; Qwen released before VLM/file whisper."""
+    """C. Preload joined before whisper; Ministral released before VLM/file whisper."""
 
     def test_preload_joined_before_transcribe(self):
         order = []
@@ -789,7 +789,7 @@ class ModelOrderTests(unittest.TestCase):
 
 
 class CancelEventIntegrationTests(unittest.TestCase):
-    """Real MistyAgent.run with a scripted model: Qwen dispose vs cancel."""
+    """Real MistyAgent.run with a scripted model: Ministral dispose vs cancel."""
 
     class FakeProcess:
         """A server process that ignores SIGTERM until it is killed."""

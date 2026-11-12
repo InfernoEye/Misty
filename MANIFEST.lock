@@ -47,19 +47,19 @@
     },
     {
       "component": "reasoning",
-      "mtime_utc": "2026-11-10T09:44:16Z",
-      "path": "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf",
-      "sha256": "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
+      "mtime_utc": "2026-11-12T13:20:34Z",
+      "path": "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+      "sha256": "33e7a72cf5e6e2cfc2f2847075acc013d68bba023e35310cef86b5cf8fdca761",
       "sha256_status": "computed",
-      "size_bytes": 5027784800
+      "size_bytes": 5198911904
     },
     {
       "component": "vision projector",
-      "mtime_utc": "2026-11-10T09:43:41Z",
-      "path": "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf",
-      "sha256": "c6ba85508d82f42590e6eb77d5340369ab6fecf107a7561d809523d8aa5f3bfd",
+      "mtime_utc": "2026-11-12T13:20:45Z",
+      "path": "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf",
+      "sha256": "e799380f596d152ff4026a72d409ecc89c96cd437676804bc3f2ab3bd6b486ec",
       "sha256_status": "computed",
-      "size_bytes": 752289728
+      "size_bytes": 858283168
     }
   ],
   "native_executables": [

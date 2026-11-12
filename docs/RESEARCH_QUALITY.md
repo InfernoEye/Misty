@@ -27,7 +27,7 @@ Nothing in these paths is keyed to a specific topic, site, language or query. Th
 
 ## Honest limits
 
-- The answering model is the shared Qwen3-VL 8B planner server. It receives bounded excerpts, not entire pages; long articles are truncated.
+- The answering model is the shared Ministral 3 8B planner server. It receives bounded excerpts, not entire pages; long articles are truncated.
 - Search quality is limited by the local SearXNG instance and by sites refusing automated fetches (403). Weak results remain possible for vague queries; the answer should then say what it could not confirm.
 - Nothing here has been validated end-to-end against the live SearXNG service and live model beyond the read-only probe described below.
 

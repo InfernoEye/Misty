@@ -1,4 +1,4 @@
-"""Regression coverage for visual routing and Qwen transport lifecycle."""
+"""Regression coverage for visual routing and Ministral transport lifecycle."""
 import json
 import unittest
 from unittest.mock import Mock, patch

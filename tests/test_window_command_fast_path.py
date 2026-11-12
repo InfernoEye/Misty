@@ -31,7 +31,7 @@ class Registry:
 
 class NoModelAgent(MistyAgent):
     def start(self):
-        raise AssertionError("A simple move must not start Qwen")
+        raise AssertionError("A simple move must not start Ministral")
     def _chat(self, *args, **kwargs):
         raise AssertionError("A simple move must not need classification, planning or final prose")
 

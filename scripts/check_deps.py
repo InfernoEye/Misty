@@ -256,8 +256,8 @@ REQUIRED_PATHS: tuple[tuple[str, str, bool], ...] = (
     ("llama vulkan backend", "third_party/llama.cpp/build/bin/libggml-vulkan.so", True),
     ("whisper-cli", "third_party/whisper.cpp/build/bin/whisper-cli", True),
     ("whisper model", "models/ggml-large-v3-turbo-q5_0.bin", True),
-    ("reasoning model", "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf", True),
-    ("vision projector", "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf", True),
+    ("reasoning model", "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf", True),
+    ("vision projector", "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf", True),
     ("ocrmypdf (pipx venv)", "data/bin/ocrmypdf", True),
     ("playwright browsers", "data/playwright-browsers", True),
     ("SearXNG settings", "config/searxng/settings.yml", True),
@@ -272,9 +272,9 @@ MODEL_GLOBS: tuple[str, ...] = (
 )
 
 MODEL_COMPONENTS: dict[str, str] = {
-    "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf": "reasoning",
+    "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf": "reasoning",
     "models/ggml-large-v3-turbo-q5_0.bin": "speech",
-    "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf": "vision projector",
+    "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf": "vision projector",
 }
 
 

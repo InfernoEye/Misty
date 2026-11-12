@@ -1284,9 +1284,9 @@ class MainWindow(QMainWindow):
         models = [
             (
                 "reasoning",
-                "Qwen3-VL 8B",
+                "Ministral 3 8B",
                 "Local planning, tool calling and vision on one shared model.",
-                ROOT / "models" / "vision" / "qwen3-vl-8b" / "Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+                ROOT / "models" / "vision" / "ministral-3-8b" / "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
             ),
             (
                 "speech",
@@ -1424,7 +1424,7 @@ class MainWindow(QMainWindow):
                 "Local AI processing",
                 "ACTIVE",
                 "Speech recognition runs through local Whisper and reasoning "
-                "runs through the local Qwen3-VL 8B model using llama.cpp. No cloud AI service "
+                "runs through the local Ministral 3 8B model using llama.cpp. No cloud AI service "
                 "is used by the current voice pipeline.",
             ),
             (
@@ -1519,8 +1519,8 @@ class MainWindow(QMainWindow):
 
         self.integration_items = []
         rows = [
-            ("Reasoning model", ROOT / "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf"),
-            ("Vision projector", ROOT / "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"),
+            ("Reasoning model", ROOT / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf"),
+            ("Vision projector", ROOT / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf"),
             ("llama.cpp server", ROOT / "third_party/llama.cpp/build/bin/llama-server"),
             ("Whisper binary", ROOT / "third_party/whisper.cpp/build/bin/whisper-cli"),
             ("Whisper model", ROOT / "models/ggml-large-v3-turbo-q5_0.bin"),
@@ -1614,8 +1614,8 @@ class MainWindow(QMainWindow):
 
     def refresh_integrations(self):
         checks = {
-            "Reasoning model": (ROOT / "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf").exists(),
-            "Vision projector": (ROOT / "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf").exists(),
+            "Reasoning model": (ROOT / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf").exists(),
+            "Vision projector": (ROOT / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf").exists(),
             "llama.cpp server": (ROOT / "third_party/llama.cpp/build/bin/llama-server").exists(),
             "Whisper binary": (ROOT / "third_party/whisper.cpp/build/bin/whisper-cli").exists(),
             "Whisper model": (ROOT / "models/ggml-large-v3-turbo-q5_0.bin").exists(),
