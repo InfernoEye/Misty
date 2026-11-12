@@ -309,6 +309,7 @@ class MistyApplication(QObject):
     @Slot(dict)
     def _task_card_started(self, task):
         """Show the card for one request (typed or voice)."""
+        self.voice_controller.set_task_escape(True)
         card = getattr(self.main_window, "task_card", None)
         if card is None:
             return
@@ -368,6 +369,7 @@ class MistyApplication(QObject):
 
     @Slot(dict)
     def _task_card_finished(self, task):
+        self.voice_controller.set_task_escape(False)
         card = getattr(self.main_window, "task_card", None)
         if card is None:
             return
