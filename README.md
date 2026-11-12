@@ -35,13 +35,13 @@ Run these from the repository root after the one-time setup in
    and check them with `.venv/bin/python -B scripts/check_deps.py`.
 4. Start Misty: `.venv/bin/python misty.py`.
 5. Press the listen shortcut (default **F8**) and speak or type a request.
-   While a task runs, **Escape** cancels it; Misty then returns to waiting for the
-   listen shortcut. See [Known limitations](#known-limitations) for what a cancel
-   can and cannot stop.
+   Press **Escape** to discard a recording or cancel transcription, planning,
+   confirmation, or further task actions. Misty returns to waiting after the
+   current operation and cleanup finish. See [Known limitations](#known-limitations).
 
-After pulling a change to `kde-shortcut/main.cpp`, rebuild the helper with
-`cmake --build kde-shortcut/build`. The app starts the built helper, so an old
-binary does not support Escape cancel.
+After pulling helper changes, rebuild with `cmake -S kde-shortcut -B kde-shortcut/build`
+and `cmake --build kde-shortcut/build`, then restart Misty. Restart after Python
+changes too; a running process keeps its loaded code.
 
 The listen shortcut defaults to **F8** when `config/shortcut.json` is missing or
 invalid. Change it in Settings → Voice; Misty saves it to `config/shortcut.json`.
@@ -54,7 +54,7 @@ Settings → Voice.
 ## Architecture
 
 1. **Hold-to-talk** — the KDE GlobalAccel helper (`kde-shortcut/build/misty-shortcut`)
-   registers the shortcut (default `F8`; this repository's `config/shortcut.json` sets `Launch (5)`). While a task runs it also binds Escape to cancel.
+   registers the shortcut (default `F8`; this repository's `config/shortcut.json` sets `Launch (5)`). It binds Escape while a recording or request owns the controller, including cleanup.
 2. **Snapshot** — microphone audio arrives through `sounddevice` / PortAudio
    (`app/speech/recorder.py`), bounded in length.
 3. **Whisper** — the WAV goes to `third_party/whisper.cpp/build/bin/whisper-cli`
@@ -203,6 +203,38 @@ Provisioning itself can be verified with:
 
 `make test` and `make deps-check` wrap these commands.
 
+### Offline regression checks
+
+From the repository root:
+
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests
+cmake -S kde-shortcut -B kde-shortcut/build
+cmake --build kde-shortcut/build
+ctest --test-dir kde-shortcut/build --output-on-failure
+```
+
+The helper pipe test uses an anonymous pipe and a Qt core event loop, without
+registering global shortcuts. Tests that launch the real KDE helper require
+`MISTY_LIVE_SHORTCUT_TESTS=1`; leave that unset during normal checks because a
+second helper can affect your active shortcut registration.
+
+## Research requests
+
+For a request such as “Research a laptop with 32GB RAM under 1000 and find it
+on eBay”, Misty starts with public research and retains your criteria. When a
+supported standalone request names a destination, it follows research with a
+dependent site-scoped lookup. Naming a marketplace does not require screen
+capture or permission to operate your browser. Explicit clicks, account work,
+and purchases keep their existing policy boundaries.
+
+Misty can refine the destination query with a name present in a readable source;
+that check does not prove suitability. The final answer must cite evidence and
+state gaps. Search links and snippets do not verify listing price, stock,
+condition, or seller quality. If pages cannot be read, Misty must report that
+failure rather than claim a recommendation. See [research quality](docs/RESEARCH_QUALITY.md)
+for retrieval limits and [the review record](docs/REVIEWS_2026_11_12.md) for this change set.
+
 ## Configuration
 
 | File | Status | Contents |
@@ -312,10 +344,12 @@ Runtime settings are constants and environment variables:
 - No packaging, no uninstall path, no migration tooling for `data/*.sqlite3`.
 - The test suite is unit-level with fakes. It does not prove a working
   microphone, GPU, KWin session or browser.
-- **Escape cancel** stops a task before its next plan step or desktop round.
-  It does not undo anything already done, and it cannot stop a click or key
-  event that has already been sent. Pressing Escape also denies any approval
-  the task is waiting on. Escape is bound only while a task runs, so other
-  applications have the key the rest of the time. The binding needs a rebuilt
-  `misty-shortcut` helper, and a physical Escape press still needs a manual
-  check on the desktop (it cannot be tested in the automated suite).
+- **Escape cancel** discards a held recording, suppresses cancelled transcription
+  results, denies pending approval, and stops further tool attempts and desktop
+  rounds. It does not undo completed work or interrupt a click/key event already
+  sent. Model loading, decoding, and other non-interruptible calls can finish
+  before cleanup returns the controller to ready; new requests wait for that
+  owner to release its resources. Escape remains bound through cleanup and is
+  released while idle. Rebuild the helper and restart Misty after updates.
+  Automated tests cover lifecycle logic and pipe handling, not a physical
+  Escape press in your KDE session.

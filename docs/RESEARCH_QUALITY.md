@@ -25,6 +25,59 @@ Observed failure (live, 2026-11-11): asking for the newest information on a topi
 
 Nothing in these paths is keyed to a specific topic, site, language or query. The behaviour is generic: word overlap ranks results, and the local model reasons about the actual text.
 
+## Research-and-find routing (2026-11-12)
+
+The user reported that a laptop research request opened a generic marketplace
+search, then entered desktop control and stopped on unsupported `inspect_screen`
+arguments. The current routing handles explicit, nonvisual research before those
+shortcuts. For supported standalone requests, it keeps the original criteria in
+one public research query and adds a dependent lookup scoped to the named site.
+The local model can prepend a candidate name only when that name occurs in a
+readable source body. This literal check does not prove the candidate meets the
+criteria. Session follow-ups retain the contextual planner rather than discard
+an earlier budget or specification.
+
+The public-research tool filter excludes screen capture, browser launch, and local
+file search as substitutes. Explicit GUI interaction and side effects keep their
+normal routing and approvals. Simple requests to search a site still use the
+navigation shortcut. Research wording inside a search payload does not change
+that intent.
+
+The inspection schema and runtime allowlist already agreed; the supplied log did
+not identify the rejected argument. The missing recovery contract was concrete:
+unknown fields failed before capture without `invalid_arguments` and
+`not_executed`. The tool now returns those fields and fixed schema guidance. The
+desktop loop can correct a clearly unexecuted call within its repair budget;
+it does not drop unknown fields, broaden capture, or replay uncertain input.
+
+If initial research fails, the dependent destination lookup does not run. The
+answer reports that fact without implying that Misty found listing matches or
+repeating the full action-count report. Activity and audit events retain the
+execution details.
+
+## Retrieval failure review (2026-11-12)
+
+A later user run reached `web_research` but returned “Search returned results,
+but no page could be read.” The log did not contain individual fetch errors, so
+it does not establish which sites or HTTP responses caused that run to fail.
+
+The code review found a separate retrieval defect: once a headline matched the
+query, the tool excluded lower-overlap results. A blocked or unreadable top
+result could therefore hide a readable source with a paraphrased headline. The
+tool now keeps the stable relevance-ranked candidate list and tries distinct
+URLs within the existing `pages + 5` fetch-attempt bound. It keeps the same
+public-address, redirect, content, timeout, and byte limits; it does not retry a
+refused URL or switch to browser input.
+
+Results now include `fetch_attempts` and a `fetch_failures` histogram alongside
+`fetch_errors`. The histogram uses fixed categories such as `http_denied`,
+`rate_limited`, `timeout`, `blocked_address`, and `insufficient_text`; it does not
+include raw exception text or failing URLs. Failure codes distinguish
+`no_search_results` from `no_readable_sources`. Readable source text remains a
+requirement for research success. Search snippets do not replace it. The excerpt
+fallback no longer restores cookie/subscribe lines that the boilerplate filter
+rejected; it can still combine short specification rows into readable text.
+
 ## Honest limits
 
 - The answering model is the shared Ministral 3 8B planner server. It receives bounded excerpts, not entire pages; long articles are truncated.
