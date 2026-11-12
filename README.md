@@ -36,7 +36,8 @@ Run these from the repository root after the one-time setup in
 4. Start Misty: `.venv/bin/python misty.py`.
 5. Press the listen shortcut (default **F8**) and speak or type a request.
    While a task runs, **Escape** cancels it; Misty then returns to waiting for the
-   listen shortcut.
+   listen shortcut. See [Known limitations](#known-limitations) for what a cancel
+   can and cannot stop.
 
 After pulling a change to `kde-shortcut/main.cpp`, rebuild the helper with
 `cmake --build kde-shortcut/build`. The app starts the built helper, so an old
@@ -311,3 +312,10 @@ Runtime settings are constants and environment variables:
 - No packaging, no uninstall path, no migration tooling for `data/*.sqlite3`.
 - The test suite is unit-level with fakes. It does not prove a working
   microphone, GPU, KWin session or browser.
+- **Escape cancel** stops a task before its next plan step or desktop round.
+  It does not undo anything already done, and it cannot stop a click or key
+  event that has already been sent. Pressing Escape also denies any approval
+  the task is waiting on. Escape is bound only while a task runs, so other
+  applications have the key the rest of the time. The binding needs a rebuilt
+  `misty-shortcut` helper, and a physical Escape press still needs a manual
+  check on the desktop (it cannot be tested in the automated suite).
