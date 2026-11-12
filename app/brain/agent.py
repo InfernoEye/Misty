@@ -1,4 +1,4 @@
-"""Local tool-calling agent for Misty, backed by the Qwen3-VL 8B server."""
+"""Local tool-calling agent for Misty, backed by the Ministral 3 8B server."""
 
 import json
 import os
@@ -48,11 +48,11 @@ LLAMA_SERVER = Path(os.environ.get(
 ))
 MODEL_PATH = Path(os.environ.get(
     "MISTY_MODEL_PATH",
-    PROJECT_DIR / "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+    PROJECT_DIR / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
 ))
 PROJECTOR_PATH = Path(os.environ.get(
     "MISTY_PROJECTOR_PATH",
-    PROJECT_DIR / "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf",
+    PROJECT_DIR / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf",
 ))
 
 HOST = os.environ.get("MISTY_LLAMA_HOST", "127.0.0.1")
@@ -2469,7 +2469,6 @@ class MistyAgent:
             "--host", HOST,
             "--port", str(PORT),
             "--jinja",
-            "--reasoning", "off",
         ]
 
     def start(self):

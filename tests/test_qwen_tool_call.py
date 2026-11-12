@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "third_party/llama.cpp/build/bin/llama-server"
-MODEL = ROOT / "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf"
+MODEL = ROOT / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf"
 LOG = ROOT / "tests/llama-server-test.log"
 BASE = "http://127.0.0.1:9931"
 
@@ -41,7 +41,7 @@ def request_json(url, data=None, timeout=10):
 
 def main():
     if not SERVER.is_file() or not MODEL.is_file():
-        raise FileNotFoundError("llama-server or Qwen3 model was not found.")
+        raise FileNotFoundError("llama-server or Ministral model was not found.")
 
     log_file = LOG.open("w")
     process = subprocess.Popen(
@@ -62,7 +62,7 @@ def main():
     )
 
     try:
-        print("[Misty test] Starting local Qwen server...")
+        print("[Misty test] Starting local Ministral server...")
         for _ in range(180):
             if process.poll() is not None:
                 raise RuntimeError("llama-server exited during startup.")
@@ -72,7 +72,7 @@ def main():
             except (OSError, urllib.error.URLError):
                 time.sleep(1)
         else:
-            raise TimeoutError("Qwen server did not become ready in 180 seconds.")
+            raise TimeoutError("Ministral server did not become ready in 180 seconds.")
 
         print("[Misty test] Server ready. Sending tool-selection request...")
 

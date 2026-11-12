@@ -27,7 +27,7 @@ record_only_while_activated = true
 unload_model_after_session = true
 
 [decision]
-model = "Qwen3VL-8B-Instruct-Q4_K_M"
+model = "Ministral-3-8B-Instruct-2512-Q4_K_M"
 backend = "llama.cpp"
 gpu_backend = "vulkan"
 confidence_threshold = 0.60

@@ -6,7 +6,7 @@ Status: proposed; design only. No dependencies installed, runtime replaced, or d
 
 Use the DSH Next computer-use pattern: one driver-owned desktop interface, real image-bearing observations, exact tool schemas, and an iterative model/tool loop. Keep Misty's voice and UI. Do not embed the DSH Electron application or copy its entire TypeScript plugin system.
 
-Preferred controller: the existing local Qwen3VL model, acting as the GUI decision-maker rather than a caption generator. Keep text Qwen for ordinary non-GUI requests. Prefer a persistent task-scoped multimodal llama.cpp server if its image API and structured output are proven by an integration test. Do not assume the current vision CLI supports that contract.
+Preferred controller: the existing local Ministral 3 8B model, acting as the GUI decision-maker rather than a caption generator. Keep text Qwen for ordinary non-GUI requests. Prefer a persistent task-scoped multimodal llama.cpp server if its image API and structured output are proven by an integration test. Do not assume the current vision CLI supports that contract.
 
 Preferred provider boundary: a managed, version-pinned Cua `mcp` subprocess using its supported stdio protocol. DSH embeds the native SDK in process; choosing MCP for Python Misty reuses the driver's public contracts while isolating native crashes and avoiding a Node bridge. The exact executable/distribution and Linux support must be verified before selecting a dependency. If no supported Linux transport exists, stop at capability diagnosis rather than silently revive raw-coordinate automation.
 
@@ -21,7 +21,7 @@ For “Click Dragon Cave in Discord on the right screen”:
 3. Read monitor/window metadata; resolve rightmost monitor by geometry, not connector numbering. Filter Discord candidates by that monitor.
 4. If multiple matching windows/targets remain, ask a specific question. Do not click a similarly named title and assume success.
 5. Obtain task approval before any input. Capture the selected target's visible state within the approved observation scope.
-6. Give Qwen3VL that actual image, accessible elements/tokens when available, the goal, and allowed tool schemas.
+6. Give Ministral 3 8B that actual image, accessible elements/tokens when available, the goal, and allowed tool schemas.
 7. Validate one proposed action; execute via Cua; obtain a fresh observation.
 8. Finish only when evidence supports the requested selection. Otherwise continue within limits, ask, or stop with an honest partial result.
 
@@ -214,7 +214,7 @@ A status view should distinguish waiting for user permission, loading a model, p
 |---|---|---|
 | A — capability spike | Pinned supported Cua distribution; read-only MCP handshake/catalog/permissions and one targeted snapshot | Works on this KDE/Wayland session; no input tools invoked; supported features recorded |
 | B — provider adapter | Managed transport, exact schemas/results/images, cancellation, generation/cleanup tests | No orphan process, no token reuse across reconnect, no unknown tool exposure |
-| C — visual decision runtime | Local Qwen3VL receives actual screenshot plus schemas and emits a validated action proposal | Controlled screenshot tests, image-capability check, bounded malformed-output handling, measured latency/memory |
+| C — visual decision runtime | Local Ministral 3 8B receives actual screenshot plus schemas and emits a validated action proposal | Controlled screenshot tests, image-capability check, bounded malformed-output handling, measured latency/memory |
 | D — controller/policy | Existing desktop route dispatches v2; approval/scope/model handoff wired end-to-end | Fake-only tests prove no unauthorized input and every terminal path cleans up |
 | E — controlled live acceptance | One harmless test application with visible state changes | Targeted action and fresh-state verification succeed, including cancellation and stale-token cases |
 | F — Discord pilot | Task-scoped real request on right monitor | Correct target selected and verified; diagnostic progress visible; no false completion |

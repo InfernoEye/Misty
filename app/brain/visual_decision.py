@@ -62,8 +62,8 @@ class VisualReadiness:
 @dataclass(frozen=True)
 class VisualRuntimeConfig:
     server_path: Path = _ROOT / "third_party/llama.cpp/build/bin/llama-server"
-    model_path: Path = _ROOT / "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf"
-    projector_path: Path = _ROOT / "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"
+    model_path: Path = _ROOT / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf"
+    projector_path: Path = _ROOT / "models/vision/ministral-3-8b/Ministral-3-8B-Instruct-2512-BF16-mmproj.gguf"
     device: str = "Vulkan0"
     gpu_layers: int = 99
     context_size: int = 32768
@@ -216,7 +216,7 @@ class VisualDecisionRuntime:
         return [str(c.server_path), "-m", str(c.model_path), "--mmproj", str(c.projector_path),
                 "--device", c.device, "-ngl", str(c.gpu_layers), "-c", str(c.context_size),
                 "-np", "1", "--host", "127.0.0.1", "--port", str(self._port),
-                "--api-key", self._api_key, "--jinja", "--reasoning", "off"]
+                "--api-key", self._api_key, "--jinja"]
 
     def _launch(self):
         # llama-server does not accept an inherited listening socket. Reserve a

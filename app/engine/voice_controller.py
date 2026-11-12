@@ -123,7 +123,7 @@ def _stop_if_running(agent):
     try:
         agent.stop()
     except Exception as error:
-        print(f"[Misty] Qwen cleanup error: {error}", flush=True)
+        print(f"[Misty] Ministral cleanup error: {error}", flush=True)
 
 
 class VoiceController(QObject):
@@ -2655,7 +2655,7 @@ class VoiceController(QObject):
             agent.start()
         except Exception as error:
             self._agent_errors.append(error)
-            print(f"[Misty] Qwen preload error: {error}", flush=True)
+            print(f"[Misty] Ministral preload error: {error}", flush=True)
 
     def _join_preload_before_transcribe(self):
         """Join the Qwen preload (bounded) before loading Whisper."""
@@ -2667,7 +2667,7 @@ class VoiceController(QObject):
         thread.join(timeout=PRELOAD_JOIN_SECONDS)
         if thread.is_alive():
             print(
-                "[Misty] Qwen preload still running; starting Whisper "
+                "[Misty] Ministral preload still running; starting Whisper "
                 "without waiting further.",
                 flush=True,
             )
@@ -2694,11 +2694,11 @@ class VoiceController(QObject):
         # unloaded outside a lease, so any recorded lease for it ends here.
         self._release_arbiter_leases("reasoning")
         try:
-            print("[Misty] Releasing Qwen before another local model runs.",
+            print("[Misty] Releasing Ministral before another local model runs.",
                   flush=True)
             agent.stop()
         except Exception as error:
-            print(f"[Misty] Qwen release error: {error}", flush=True)
+            print(f"[Misty] Ministral release error: {error}", flush=True)
             return False
         finally:
             # The hook runs *inside* agent.run. A cancelled request must stay
@@ -2990,7 +2990,7 @@ class VoiceController(QObject):
             self.activity_event.emit({
                 "kind": "thinking",
                 "title": "Misty is processing your request",
-                "details": "Local speech recognition and the local Qwen model.",
+                "details": "Local speech recognition and the local Ministral model.",
                 "status": "info",
             })
             self.response_changed.emit("Working out what you need...")
@@ -3001,7 +3001,7 @@ class VoiceController(QObject):
 
             if self._agent_errors:
                 print(
-                    "[Misty] Qwen preload failed; agent will retry startup.",
+                    "[Misty] Ministral preload failed; agent will retry startup.",
                     flush=True,
                 )
 

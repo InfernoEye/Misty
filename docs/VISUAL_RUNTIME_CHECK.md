@@ -8,7 +8,7 @@ The [visual runtime check](../scripts/check_visual_runtime.py) separates model r
 .venv/bin/python scripts/check_visual_runtime.py
 ```
 
-This checks whether the configured llama.cpp server, Qwen3VL model and projector files exist. It starts **no model**. `artifacts_present` does not establish image input, valid inference or coordinate grounding. The implementation-session metadata check found all three files, but did not load them.
+This checks whether the configured llama.cpp server, Ministral 3 8B model and projector files exist. It starts **no model**. `artifacts_present` does not establish image input, valid inference or coordinate grounding. The implementation-session metadata check found all three files, but did not load them.
 
 ## Explicit synthetic image probe
 
