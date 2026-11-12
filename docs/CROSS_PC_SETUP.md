@@ -62,6 +62,10 @@ ydotool type "ok"                # smoke test
 
 Without this, injected typing fails closed with `uinput_unavailable`.
 
+`desktop_type_text` returns `verified: true` only when the focused field's text
+grew by exactly the typed string, `false` when it did not, and `null` when the
+field cannot be read through AT-SPI. Check that value after a typing test.
+
 ## 3. Python environment
 
 ```bash
@@ -166,7 +170,7 @@ bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-net \
   .venv/bin/python -B -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The last verified run (2026-11-11, working tree): 2,519 tests, OK (1 skipped). Passing tests does **not**
+The last verified run (2026-11-12, `main` at f50ea4c): 2,541 tests, OK (1 skipped). Passing tests does **not**
 prove live microphone, GPU, KWin or browser behaviour; exercise those in the
 real session. `scripts/check_desktop_v2.py` reports the optional Cua
 capability gate separately.
