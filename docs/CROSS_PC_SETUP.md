@@ -114,7 +114,7 @@ them from a trusted source you control, place them at:
 
 | Path | Size (bytes) |
 | --- | --- |
-| `models/Qwen3-4B-Q4_K_M.gguf` | 2,497,280,256 |
+| `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` | 5,027,784,800 |
 | `models/ggml-large-v3-turbo-q5_0.bin` | 574,041,195 |
 | `models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf` | 5,027,784,800 |
 | `models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf` | 752,289,728 |

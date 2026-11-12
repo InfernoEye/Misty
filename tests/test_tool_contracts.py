@@ -276,6 +276,33 @@ class _StubInputBackend:
                 "message": "stub backend"}
 
 
+class OpenAppDiscoveryTests(unittest.TestCase):
+    def test_open_app_schema_does_not_restrict_to_a_fixed_list(self):
+        definition = next(
+            item for item in tools_module.TOOL_DEFINITIONS
+            if item["function"]["name"] == "open_app"
+        )
+        app_schema = definition["function"]["parameters"]["properties"]["app"]
+        self.assertNotIn("enum", app_schema)
+
+    def test_open_app_resolves_an_installed_app_outside_the_old_list(self):
+        from app.desktop.app_launcher import discover
+
+        installed = next(
+            app for app in discover()
+            if app.name.casefold() not in tools_module.APPLICATIONS_ALLOWED
+        )
+        executor = Mock()
+        executor.execute.return_value = {"success": True, "message": "ok"}
+        registry = ToolRegistry(executor=executor)
+        result = registry.execute("open_app", {"app": installed.name})
+        self.assertTrue(result["success"], result)
+        executor.execute.assert_called_once()
+        self.assertEqual(
+            executor.execute.call_args.args[0]["intent"], "open_desktop_entry"
+        )
+
+
 class ContractInventoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

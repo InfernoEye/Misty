@@ -255,9 +255,8 @@ REQUIRED_PATHS: tuple[tuple[str, str, bool], ...] = (
     ("llama-mtmd-cli", "third_party/llama.cpp/build/bin/llama-mtmd-cli", True),
     ("llama vulkan backend", "third_party/llama.cpp/build/bin/libggml-vulkan.so", True),
     ("whisper-cli", "third_party/whisper.cpp/build/bin/whisper-cli", True),
-    ("reasoning model", "models/Qwen3-4B-Q4_K_M.gguf", True),
     ("whisper model", "models/ggml-large-v3-turbo-q5_0.bin", True),
-    ("vision model", "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf", True),
+    ("reasoning model", "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf", True),
     ("vision projector", "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf", True),
     ("ocrmypdf (pipx venv)", "data/bin/ocrmypdf", True),
     ("playwright browsers", "data/playwright-browsers", True),
@@ -273,9 +272,8 @@ MODEL_GLOBS: tuple[str, ...] = (
 )
 
 MODEL_COMPONENTS: dict[str, str] = {
-    "models/Qwen3-4B-Q4_K_M.gguf": "reasoning",
+    "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf": "reasoning",
     "models/ggml-large-v3-turbo-q5_0.bin": "speech",
-    "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf": "vision",
     "models/vision/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf": "vision projector",
 }
 
@@ -374,7 +372,7 @@ VENDORED: tuple[dict[str, str], ...] = (
         "name": "llama.cpp",
         "path": "third_party/llama.cpp",
         "commit": "a4d4f2fd4ec85ec6a0a9ece4870416c1b6cc24f5",
-        "role": "llama-server (planner) and llama-mtmd-cli (VLM)",
+        "role": "llama-server (shared planner and vision model)",
         "artifacts": [
             "third_party/llama.cpp/build/bin/llama-server",
             "third_party/llama.cpp/build/bin/llama-mtmd-cli",

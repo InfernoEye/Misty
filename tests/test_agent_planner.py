@@ -280,6 +280,43 @@ class AgentPlannerIntegrationTests(unittest.TestCase):
         self.assertIn("accessibility_inspect_application", names)
         self.assertNotIn("inspect_screen", names)
 
+    def test_clicking_a_named_control_keeps_screenshot(self):
+        registry = FakeRegistry()
+        response = plan_response([plan_step("step-1", "get_time")])
+        agent = TestableMistyAgent(
+            registry, [response, {"content": "Done."}]
+        )
+
+        agent.run("click the Save button")
+
+        planning = json.loads(
+            agent.chat_calls[0]["messages"][1]["content"]
+        )
+        names = {
+            item["function"]["name"]
+            for item in planning["available_tools"]
+        }
+        if "inspect_screen" in {
+            item["function"]["name"]
+            for item in registry.available_tools()
+        }:
+            self.assertIn("inspect_screen", names)
+
+    def test_control_structure_question_hides_screenshot_but_action_keeps_it(self):
+        from app.brain import tools as tools_module
+
+        pool = tools_module.TOOL_DEFINITIONS + [tools_module.INSPECT_SCREEN_DEFINITION]
+
+        def visible(transcript):
+            return {
+                item["function"]["name"]
+                for item in TestableMistyAgent._tools_for_request(transcript, pool)
+            }
+
+        self.assertNotIn("inspect_screen", visible("What controls does Dolphin show?"))
+        self.assertIn("inspect_screen", visible("click the Save button"))
+        self.assertIn("inspect_screen", visible("klikni przycisk zapisz"))
+
     def test_visual_appearance_keeps_screenshot(self):
         registry = FakeRegistry()
         response = plan_response([plan_step("step-1", "get_time")])

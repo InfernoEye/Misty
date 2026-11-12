@@ -84,6 +84,7 @@ EXPECTED_BASELINE = {
     "list_windows": ("read_only", "low", False, False, False),
     "get_active_window": ("read_only", "low", False, False, False),
     "focus_window": ("window_control", "low", False, True, False),
+    "pick_window": ("window_control", "low", False, False, False),
     "minimize_window": ("window_control", "low", False, True, False),
     "maximize_window": ("window_control", "low", False, True, False),
     "restore_window": ("window_control", "low", False, True, False),

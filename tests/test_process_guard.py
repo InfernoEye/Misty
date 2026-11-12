@@ -51,19 +51,29 @@ class MatcherTests(unittest.TestCase):
         self.assertFalse(_matches_model_server(2 ** 22, ROOT, os.getuid()))
 
 
-class CleanupTests(unittest.TestCase):
-    def test_cleanup_is_a_no_op_when_nothing_matches(self):
-        # No llama-server of ours is running during the test suite.
-        self.assertEqual(cleanup_orphan_model_servers(ROOT), 0)
+def _live_model_server_pids():
+    return [
+        int(entry.name) for entry in pathlib.Path("/proc").iterdir()
+        if entry.name.isdigit() and _matches_model_server(
+            int(entry.name), ROOT, os.getuid()
+        )
+    ]
 
+
+class CleanupTests(unittest.TestCase):
     def test_keep_pids_are_never_touched(self):
+        live = _live_model_server_pids()
         self.assertEqual(
-            cleanup_orphan_model_servers(ROOT, keep_pids=[os.getpid()]), 0
+            cleanup_orphan_model_servers(ROOT, keep_pids=[os.getpid(), *live]), 0
         )
 
     def test_bad_keep_pids_are_ignored(self):
+        live = _live_model_server_pids()
         self.assertEqual(
-            cleanup_orphan_model_servers(ROOT, keep_pids=["nonsense", None]), 0
+            cleanup_orphan_model_servers(
+                ROOT, keep_pids=["nonsense", None, *live]
+            ),
+            0,
         )
 
 

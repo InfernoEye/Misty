@@ -5,9 +5,13 @@ binary/uinput probes are injected.  The tests assert that typed text never
 reaches argv and that every missing prerequisite fails closed.
 """
 
+import atexit
 import json
+import shutil
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from app.desktop.input import (
     DesktopInput,
@@ -24,6 +28,10 @@ from app.desktop.ydotool_backend import (
     YdotoolBackend,
     key_codes,
 )
+
+_TEST_LOG_DIR = tempfile.mkdtemp(prefix="misty-ydotool-test-")
+atexit.register(shutil.rmtree, _TEST_LOG_DIR, ignore_errors=True)
+TEST_LOG = Path(_TEST_LOG_DIR) / "misty-desktop.log"
 
 
 class _Completed:
@@ -76,6 +84,7 @@ def backend(**overrides):
         exists=lambda path: path == UINPUT_PATH,
         access=lambda path, mode: True,
     )
+    options.setdefault("log_path", TEST_LOG)
     options.update(overrides)
     runner = options.pop("runner", None) or FakeRunner()
     return YdotoolBackend(runner=runner, **options), runner

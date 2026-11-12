@@ -45,42 +45,10 @@ class DesktopVision:
         capture_service: CaptureService,
         ocr_service: OCRService,
         vlm_service: VisionLanguageService,
-        before_analyze=None,
     ) -> None:
         self.capture_service = capture_service
         self.ocr_service = ocr_service
         self.vlm_service = vlm_service
-        #: Optional zero-argument hook run immediately before the VLM starts
-        #: (after capture/OCR, right before the model loads), so the app can
-        #: release the reasoning model first instead of running both models.
-        self.before_analyze = before_analyze
-
-    def set_before_analyze(self, callback) -> None:
-        """Install (or clear, with None) the pre-VLM release hook."""
-        self.before_analyze = callback
-        # Keep a service-level hook (e.g. VisionLanguageService) in step.
-        setter = getattr(self.vlm_service, "set_before_analyze", None)
-        if callable(setter):
-            try:
-                setter(callback)
-            except Exception:
-                pass
-
-    def _release_reasoning_model(self) -> None:
-        callback = self.before_analyze
-        if callback is not None:
-            try:
-                callback()
-            except Exception as exc:  # noqa: BLE001 - never break inspection
-                print(f"[Misty] Vision pre-hook failed: {exc}", flush=True)
-            return
-        # Fall back to the VLM's own hook when only that one was configured.
-        releaser = getattr(self.vlm_service, "_release_reasoning_model", None)
-        if callable(releaser):
-            try:
-                releaser()
-            except Exception:
-                pass
 
     def inspect(
         self,
@@ -95,11 +63,6 @@ class DesktopVision:
             screen_name=screen_name,
             window_id=window_id,
         )
-
-        if include_visual:
-            # Release the reasoning model before OCR: it is about to be used
-            # by a different model for the next seconds.
-            self._release_reasoning_model()
 
         ocr = self.ocr_service.recognize(capture.image)
 

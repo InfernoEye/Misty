@@ -12,6 +12,7 @@ import json
 import unittest
 
 from app.brain.agent import (
+    CORE_POLICY,
     PLANNING_INSTRUCTIONS,
     PRIVATE_RESULT_TOOLS,
     MistyAgent,
@@ -323,6 +324,13 @@ class TtlTests(unittest.TestCase):
 # ------------------------------------------------------ agent contract
 
 
+def _planning_call(agent):
+    return next(
+        call for call in agent.chat_calls
+        if call["messages"][0]["content"].startswith(CORE_POLICY)
+    )
+
+
 class AgentSessionContextTests(unittest.TestCase):
     def _agent(self, **kwargs):
         registry = FakeRegistry()
@@ -333,7 +341,7 @@ class AgentSessionContextTests(unittest.TestCase):
 
     @staticmethod
     def _planning(agent):
-        return json.loads(agent.chat_calls[0]["messages"][1]["content"])
+        return json.loads(_planning_call(agent)["messages"][1]["content"])
 
     def test_planning_payload_contains_session_context(self):
         agent = self._agent()
@@ -393,6 +401,7 @@ class AgentSessionContextTests(unittest.TestCase):
 
     def test_pending_clarification_stays_first_and_unchanged(self):
         agent = self._agent()
+        agent.responses.insert(0, {"content": json.dumps({"request": "Open Downloads"})})
         agent.run(
             "Downloads",
             context={
@@ -401,7 +410,7 @@ class AgentSessionContextTests(unittest.TestCase):
                 "session": {"last_request": "earlier"},
             },
         )
-        user_message = agent.chat_calls[0]["messages"][1]["content"]
+        user_message = _planning_call(agent)["messages"][1]["content"]
         planning = json.loads(user_message)
         self.assertEqual(
             planning["pending_clarification"],

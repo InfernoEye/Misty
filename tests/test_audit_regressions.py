@@ -8,7 +8,7 @@ fakes (no model, network, desktop, browser or real filesystem writes).
 import json
 import unittest
 
-from app.brain.agent import MistyAgent, PRIVATE_RESULT_TOOLS
+from app.brain.agent import CORE_POLICY, MistyAgent, PRIVATE_RESULT_TOOLS
 from app.brain.direct_actions import resolve_direct_action
 from app.brain.policy import is_retryable, is_transient_failure
 from tests.agent_fakes import (
@@ -286,13 +286,20 @@ class DirectRoutingTests(unittest.TestCase):
         )
 
 
+def _planning_call(agent):
+    return next(
+        call for call in agent.chat_calls
+        if call["messages"][0]["content"].startswith(CORE_POLICY)
+    )
+
+
 class ClarificationContextTests(unittest.TestCase):
     """Audit defect: clarification answers could not continue a request."""
 
     def test_context_reaches_planning_payload(self):
         agent = _Agent(
             FakeRegistry(),
-            [plan_response([plan_step("1", "get_time")]), {"content": "Ok."}],
+            [{"content": json.dumps({"request": "Open Downloads"})}, plan_response([plan_step("1", "get_time")]), {"content": "Ok."}],
         )
 
         agent.run(
@@ -303,7 +310,7 @@ class ClarificationContextTests(unittest.TestCase):
             },
         )
 
-        planning = json.loads(agent.chat_calls[0]["messages"][1]["content"])
+        planning = json.loads(_planning_call(agent)["messages"][1]["content"])
         self.assertEqual(
             planning["pending_clarification"]["original_request"],
             "Find my October invoice",
@@ -339,7 +346,7 @@ class ClarificationContextTests(unittest.TestCase):
 
         agent.run("What time is it?", context={"transcript": "", "question": ""})
 
-        planning = json.loads(agent.chat_calls[0]["messages"][1]["content"])
+        planning = json.loads(_planning_call(agent)["messages"][1]["content"])
         self.assertNotIn("pending_clarification", planning)
 
 
@@ -353,7 +360,7 @@ class ClarificationPlumbingTests(unittest.TestCase):
     def test_pending_key_reaches_the_planner(self):
         agent = _Agent(
             FakeRegistry(),
-            [plan_response([plan_step("1", "get_time")]), {"content": "Ok."}],
+            [{"content": json.dumps({"request": "Open Downloads"})}, plan_response([plan_step("1", "get_time")]), {"content": "Ok."}],
         )
 
         agent.run(
@@ -367,7 +374,7 @@ class ClarificationPlumbingTests(unittest.TestCase):
             },
         )
 
-        planning = json.loads(agent.chat_calls[0]["messages"][1]["content"])
+        planning = json.loads(_planning_call(agent)["messages"][1]["content"])
         self.assertEqual(
             planning["pending_clarification"]["original_request"],
             "Find my October invoice",

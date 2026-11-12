@@ -2688,7 +2688,7 @@ class VoiceController(QObject):
         current = threading.current_thread()
         if current is not self._worker:
             return False
-        if agent.process is None:
+        if agent.process is None or getattr(agent, "task_held", False):
             return False
         # Keep the arbiter's view truthful: the model is about to be
         # unloaded outside a lease, so any recorded lease for it ends here.

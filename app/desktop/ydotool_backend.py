@@ -36,8 +36,13 @@ import shutil
 import subprocess
 import time
 from collections.abc import Mapping
+from datetime import datetime
+from pathlib import Path
 
 from app.desktop.input import MAX_TEXT_LENGTH, validate_action
+from app.settings import ROOT
+
+DESKTOP_LOG = ROOT / "logs" / "misty-desktop.log"
 
 __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
@@ -172,8 +177,10 @@ class YdotoolBackend:
         runner=None,
         timeout=DEFAULT_TIMEOUT_SECONDS,
         cursor_reader=None,
+        log_path=DESKTOP_LOG,
     ):
         self._binary = binary
+        self._log_path = Path(log_path)
         self._which = which or shutil.which
         self._exists = exists or os.path.exists
         self._cursor_reader = cursor_reader
@@ -280,17 +287,32 @@ class YdotoolBackend:
         return [binary, "mousemove", "--wheel", "-x", str(dx), "-y", str(dy)]
 
     # -- execution ----------------------------------------------------
+    def _log_error(self, message):
+        self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().isoformat(timespec="seconds")
+        with self._log_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} ydotool {message}\n")
+
     def _exec(self, argv, input_bytes=None):
+        command = Path(argv[0]).name
         try:
             completed = self._runner(
                 argv, input=input_bytes, timeout=self._timeout
             )
         except subprocess.TimeoutExpired:
+            self._log_error(f"{command} timed out after {self._timeout}s")
             return "timeout"
-        except Exception:
+        except Exception as error:
+            self._log_error(f"{command} could not start: {error!r}")
             return "command_failed"
         if getattr(completed, "returncode", None) == 0:
             return None
+        stderr = (getattr(completed, "stderr", None) or b"")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", "replace")
+        self._log_error(
+            f"{command} exited {completed.returncode}: {stderr.strip()[:500]}"
+        )
         return "command_failed"
 
     def execute(self, action):

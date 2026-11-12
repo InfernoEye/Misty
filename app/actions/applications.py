@@ -193,7 +193,7 @@ def launch_application(desktop_id):
         return {"success": False, "message": "gtk-launch is unavailable."}
 
     try:
-        subprocess.Popen(
+        launched = subprocess.Popen(
             [launcher, desktop_id],
             start_new_session=True,
             stdout=subprocess.DEVNULL,
@@ -206,4 +206,5 @@ def launch_application(desktop_id):
         "success": True,
         "message": f"Launching {application['name']}.",
         "application": application,
+        "session_id": launched.pid,
     }

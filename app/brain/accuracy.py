@@ -216,6 +216,11 @@ _TOOL_ACCURACY = {
         "discovery": "never",
         "recovery": "retry_same",
     },
+    "pick_window": {
+        "precision": "exact",
+        "discovery": "never",
+        "recovery": "retry_same",
+    },
     "focus_window": {
         "precision": "fuzzy",
         "discovery": "resolves",

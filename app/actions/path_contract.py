@@ -300,10 +300,8 @@ def approved_base(
         base = Path(resolver.base_for_key(folder))
         if resolve_strict:
             base = base.resolve(strict=True)
-    except ENCODING_ERRORS:
-        raise PathContractError(INVALID_FOLDER) from None
-    except Exception:  # noqa: BLE001 - resolver failures are opaque
-        raise PathContractError(INVALID_FOLDER) from None
+    except Exception as error:  # noqa: BLE001 - resolver errors carry the reason
+        raise PathContractError(INVALID_FOLDER, str(error) or None) from None
 
     try:
         if not base.is_dir() or base.is_symlink():
@@ -314,7 +312,10 @@ def approved_base(
         raise PathContractError(INVALID_FOLDER) from None
 
     if enforce_home and not _home_containment(base, resolver):
-        raise PathContractError(INVALID_FOLDER)
+        raise PathContractError(
+            INVALID_FOLDER,
+            "The approved folder resolves outside the home directory.",
+        )
     return base
 
 

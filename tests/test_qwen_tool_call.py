@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "third_party/llama.cpp/build/bin/llama-server"
-MODEL = ROOT / "models/Qwen3-4B-Q4_K_M.gguf"
+MODEL = ROOT / "models/vision/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf"
 LOG = ROOT / "tests/llama-server-test.log"
 BASE = "http://127.0.0.1:9931"
 
