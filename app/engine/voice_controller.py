@@ -640,6 +640,8 @@ class VoiceController(QObject):
                 self._press()
             elif event == "RELEASE":
                 self._release()
+            elif event == "CANCEL":
+                self.cancel_active_request()
             elif event.startswith("READY"):
                 self._helper_ready = True
                 sequence = event[len("READY"):].strip()
@@ -2247,6 +2249,13 @@ class VoiceController(QObject):
             )
         self._task_emit(self.task_finished, payload)
 
+    def set_task_escape(self, active):
+        """Bind Escape globally only while a task runs; release it otherwise."""
+        if self.process.state() == QProcess.ProcessState.NotRunning:
+            return
+        command = "CANCEL_ON" if active else "CANCEL_OFF"
+        self.process.write(f"{command}\n".encode())
+
     def cancel_active_request(self):
         """Ask the running request to stop before its next step.
 
@@ -2262,6 +2271,7 @@ class VoiceController(QObject):
             event.set()
         except Exception:
             return False
+        self._confirm_pending(False)
         # The task ends on its own "Task cancelled" event once the agent
         # returns; the next step is never started.
         return True

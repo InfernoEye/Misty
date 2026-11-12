@@ -1,6 +1,7 @@
 #include <QAction>
 #include <QGuiApplication>
 #include <QKeySequence>
+#include <QSocketNotifier>
 #include <QString>
 #include <QTextStream>
 
@@ -100,16 +101,26 @@ int main(int argc, char *argv[])
         failWithCode(3);
     }
 
+    QAction cancelTask;
+    cancelTask.setObjectName("cancelTask");
+    cancelTask.setText("Cancel Misty task");
+    cancelTask.setAutoRepeat(false);
+
+    const QKeySequence cancelKey(QKeySequence::fromString(QStringLiteral("Esc")));
+
     QObject::connect(
         globalAccel,
         &KGlobalAccel::globalShortcutActiveChanged,
         &app,
-        [&holdToTalk](QAction *action, bool active) {
-            if (action != &holdToTalk)
-                return;
-
+        [&holdToTalk, &cancelTask](QAction *action, bool active) {
             QTextStream output(stdout);
-            output << (active ? "PRESS\n" : "RELEASE\n");
+            if (action == &holdToTalk) {
+                output << (active ? "PRESS\n" : "RELEASE\n");
+            } else if (action == &cancelTask && active) {
+                output << "CANCEL\n";
+            } else {
+                return;
+            }
             output.flush();
         }
     );
@@ -120,6 +131,21 @@ int main(int argc, char *argv[])
           << activeKeys.first().toString(QKeySequence::PortableText)
           << "\n";
     ready.flush();
+
+    // Escape is bound only while a task runs, so other applications keep it
+    // the rest of the time.
+    QTextStream input(stdin);
+    QSocketNotifier commands(0, QSocketNotifier::Read);
+    QObject::connect(&commands, &QSocketNotifier::activated, [&globalAccel, &cancelTask, &input, cancelKey](int) {
+        while (!input.atEnd()) {
+            const QString command = input.readLine().trimmed();
+            if (command == QLatin1String("CANCEL_ON")) {
+                globalAccel->setShortcut(&cancelTask, {cancelKey}, KGlobalAccel::NoAutoloading);
+            } else if (command == QLatin1String("CANCEL_OFF")) {
+                globalAccel->setShortcut(&cancelTask, {}, KGlobalAccel::NoAutoloading);
+            }
+        }
+    });
 
     return app.exec();
 }
