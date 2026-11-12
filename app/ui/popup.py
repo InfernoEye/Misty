@@ -87,15 +87,14 @@ class MistyPopup(QWidget):
         title = QLabel("Misty")
         title.setObjectName("title")
 
-        subtitle = QLabel("YOUR LOCAL DESKTOP ASSISTANT")
+        subtitle = QLabel("YOUR LOCAL ASSISTANT")
         subtitle.setObjectName("subtitle")
 
         title_column.addWidget(title)
         title_column.addWidget(subtitle)
 
         header.addWidget(self.logo)
-        header.addLayout(title_column)
-        header.addStretch()
+        header.addLayout(title_column, 1)
 
         self.status = QLabel()
         self.status.setObjectName("status")
@@ -217,6 +216,10 @@ class MistyPopup(QWidget):
         )
         self.confirmation_description.setWordWrap(True)
         self.confirmation_description.setTextFormat(Qt.TextFormat.PlainText)
+        self.confirmation_description.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum,
+        )
 
         confirmation_buttons = QHBoxLayout()
         confirmation_buttons.setSpacing(8)
@@ -229,8 +232,19 @@ class MistyPopup(QWidget):
         confirmation_buttons.addWidget(self.cancel_button)
         confirmation_buttons.addWidget(self.confirm_button)
 
+        confirmation_scroll = QScrollArea()
+        confirmation_scroll.setObjectName("confirmationScroll")
+        confirmation_scroll.setWidgetResizable(True)
+        confirmation_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        confirmation_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        confirmation_scroll.setMaximumHeight(220)
+        confirmation_scroll.setWidget(self.confirmation_description)
+        self.confirmation_scroll = confirmation_scroll
+
         confirmation_layout.addWidget(self.confirmation_title)
-        confirmation_layout.addWidget(self.confirmation_description)
+        confirmation_layout.addWidget(confirmation_scroll)
         confirmation_layout.addLayout(confirmation_buttons)
 
         layout.addWidget(self.confirmation_card)
@@ -348,6 +362,15 @@ class MistyPopup(QWidget):
         self.set_state("confirmation")
         self.adjustSize()
         self.show_popup()
+        QTimer.singleShot(0, self._fit_confirmation_scroll)
+
+    def _fit_confirmation_scroll(self):
+        scroll = self.confirmation_scroll
+        needed = self.confirmation_description.heightForWidth(
+            scroll.viewport().width()
+        )
+        scroll.setFixedHeight(min(needed, 220))
+        self.adjustSize()
 
     def set_confirmation_busy(self):
         self.confirm_button.setEnabled(False)
@@ -448,7 +471,7 @@ class MistyPopup(QWidget):
 
             QLabel#subtitle {
                 font-size: 8px;
-                letter-spacing: 1.2px;
+                letter-spacing: 0.6px;
                 color: #8994AE;
                 font-weight: 600;
             }
@@ -457,7 +480,7 @@ class MistyPopup(QWidget):
                 background-color: #293348;
                 color: #AFC2F8;
                 border-radius: 9px;
-                padding: 6px 9px;
+                padding: 6px 7px;
                 font-size: 9px;
                 font-weight: 800;
             }
@@ -495,6 +518,7 @@ class MistyPopup(QWidget):
             }
 
             QLabel#cardContent {
+                background-color: transparent;
                 color: #EDF0F8;
                 font-size: 13px;
             }
@@ -554,7 +578,14 @@ class MistyPopup(QWidget):
                 font-weight: 800;
             }
 
+            QScrollArea#confirmationScroll,
+            QScrollArea#confirmationScroll > QWidget {
+                background-color: transparent;
+                border: none;
+            }
+
             QLabel#confirmationDescription {
+                background-color: transparent;
                 color: #EDF0F8;
                 font-size: 12px;
             }
@@ -630,7 +661,7 @@ class MistyPopup(QWidget):
         self.state_label.setText(label)
         self.status.setStyleSheet(
             f"background-color: #293348; color: {color}; "
-            "border-radius: 9px; padding: 6px 9px; "
+            "border-radius: 9px; padding: 6px 7px; "
             "font-size: 9px; font-weight: 800;"
         )
         self.state_label.setStyleSheet(

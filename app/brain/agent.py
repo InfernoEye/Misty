@@ -522,9 +522,8 @@ For desktop window requests:
   not an answer to a request to read something. After search_files, feed
   the found path into read_document with a result reference.
 - To open a page, use open_url with a validated public URL. To search a
-  supported site (YouTube, Google, Wikipedia, GitHub, Arch Wiki, Stack
-  Overflow, Allegro), use search_site with site and query. Do not invent a
-  site's search URL format when search_site supports that site.
+  website, use search_site with site and query; the site values it accepts
+  are listed in its schema. Do not invent a site's search URL format.
 - Infer the actual topic or entity behind vague recommendation requests.
   Never search a bare adjective such as "cool", "fun", or "interesting".
   If the request has no topic, ask a short clarifying question or use a
@@ -794,9 +793,13 @@ Tool routing:
   the second one", so call open_last_result with index 2 and depends_on the
   search step.
 - To open a page, use open_url with a validated public URL. To search a
-  supported site (YouTube, Google, Wikipedia, GitHub, Arch Wiki, Stack
-  Overflow, Allegro), use search_site with site and query. Do not invent a
-  site's search URL format when search_site supports that site.
+  website, use search_site with site and query; the site values it accepts
+  are listed in its schema. Do not invent a site's search URL format.
+- A request to go to a site and find, look up, search, or check something
+  is a clear request. Plan the search_site step; do not ask permission.
+  Examples (request -> step):
+  "Go on GitHub and find a Rust HTTP client" -> search_site(site=github, query=Rust HTTP client)
+  "Can you check Twitch for speedrun streams?" -> search_site(site=twitch, query=speedrun)
 - Infer the actual topic or entity behind vague recommendation requests.
   Never search a bare adjective such as "cool", "fun", or "interesting".
   If the request has no topic, ask a short clarifying question or use a
@@ -2737,6 +2740,7 @@ class MistyAgent:
                     tools=[], response_format={"type": "json_object"},
                 )
                 raw_plan = planning_message.get("content")
+                print(f"[Misty] Planner reply: {raw_plan!r}", flush=True)
                 if not isinstance(raw_plan, str) or not raw_plan.strip():
                     raise PlanValidationError("The local model returned an empty task plan.")
                 try:
